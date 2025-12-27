@@ -1,0 +1,11 @@
+[package]
+name = "jpp_core"
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

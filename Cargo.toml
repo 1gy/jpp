@@ -1,0 +1,17 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+authors = ["1gy"]
+edition = "2024"
+version = "0.1.0"
+publish = false
+
+[workspace.dependencies]
+
+[workspace.lints.clippy]
+all = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
