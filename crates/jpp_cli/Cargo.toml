@@ -10,8 +10,8 @@ name = "jpp"
 path = "src/main.rs"
 
 [dependencies]
+jpp_core = { path = "../jpp_core" }
 serde_json = "1"
-serde_json_path = "0.7"
 
 [lints]
 workspace = true

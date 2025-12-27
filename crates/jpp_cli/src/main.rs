@@ -1,5 +1,4 @@
 use serde_json::Value;
-use serde_json_path::JsonPath;
 use std::env;
 use std::fs;
 use std::io::{self, Read};
@@ -47,7 +46,9 @@ fn parse_args() -> Result<ParsedArgs, String> {
             "-h" | "--help" => return Ok(ParsedArgs::Help),
             "-V" | "--version" => return Ok(ParsedArgs::Version),
             s if s.starts_with('-') => {
-                return Err(format!("unknown option: {s}\n\nUsage: jpp [OPTIONS] <QUERY> [FILE]\n\nFor more information, try '--help'"));
+                return Err(format!(
+                    "unknown option: {s}\n\nUsage: jpp [OPTIONS] <QUERY> [FILE]\n\nFor more information, try '--help'"
+                ));
             }
             _ => positional.push(arg.clone()),
         }
@@ -72,8 +73,9 @@ fn parse_args() -> Result<ParsedArgs, String> {
 
 fn read_input(file: Option<&str>) -> Result<String, String> {
     match file {
-        Some(path) => fs::read_to_string(path)
-            .map_err(|e| format!("error reading file '{path}': {e}")),
+        Some(path) => {
+            fs::read_to_string(path).map_err(|e| format!("error reading file '{path}': {e}"))
+        }
         None => {
             let mut buffer = String::new();
             io::stdin()
@@ -99,15 +101,13 @@ fn run() -> Result<(), String> {
         ParsedArgs::Query { query, file } => {
             let input = read_input(file.as_deref())?;
 
-            let json: Value = serde_json::from_str(&input)
-                .map_err(|e| format!("error parsing JSON: {e}"))?;
+            let json: Value =
+                serde_json::from_str(&input).map_err(|e| format!("error parsing JSON: {e}"))?;
 
-            let path = JsonPath::parse(&query)
+            let results = jpp_core::query(&query, &json)
                 .map_err(|e| format!("error parsing JSONPath query: {e}"))?;
 
-            let results = path.query(&json);
-
-            let output = serde_json::to_string_pretty(&results.all())
+            let output = serde_json::to_string_pretty(&results)
                 .map_err(|e| format!("error serializing output: {e}"))?;
 
             println!("{output}");
