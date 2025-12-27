@@ -1,0 +1,22 @@
+{
+	"name": "Claude Code",
+	"id": "claude-code",
+	"version": "1.0.0",
+	"description": "Installs Claude Code",
+	"options": {},
+	"mounts": [
+		{
+			"source": "claude-code-data-${devcontainerId}",
+			"target": "/claude-code-data",
+			"type": "volume"
+		}
+	],
+	"containerEnv": {
+		"CLAUDE_CONFIG_DIR": "/claude-code-data"
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": ["anthropic.claude-code"]
+		}
+	}
+}

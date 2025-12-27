@@ -1,0 +1,10 @@
+// Development Containers : https://containers.dev/overview
+{
+	"name": "jpp-dev",
+	"image": "mcr.microsoft.com/devcontainers/base:trixie",
+	"features": {
+		"ghcr.io/devcontainers/features/rust:1": {},
+		"./claude-code": {},
+		"./just": {}
+	}
+}
