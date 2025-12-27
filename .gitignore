@@ -4,3 +4,6 @@
 # rust
 /target/
 Cargo.lock
+
+# claude code
+.claude/settings.local.json
