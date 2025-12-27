@@ -1,0 +1,17 @@
+[package]
+name = "jpp_cli"
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "jpp"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+serde_json_path = "0.7"
+
+[lints]
+workspace = true
