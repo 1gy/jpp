@@ -130,23 +130,15 @@ impl Parser {
     }
 
     fn parse_selectors_after_dot(&mut self) -> Result<Vec<Selector>, ParseError> {
+        // RFC 9535: Keywords are valid as property names in dot notation
+        if let Some(name) = self.current_kind().and_then(Self::keyword_to_property_name) {
+            self.advance();
+            return Ok(vec![Selector::Name(name.to_string())]);
+        }
         match self.current_kind().cloned() {
             Some(TokenKind::Ident(name)) => {
                 self.advance();
                 Ok(vec![Selector::Name(name)])
-            }
-            // RFC 9535: Keywords are valid as property names in dot notation
-            Some(TokenKind::True) => {
-                self.advance();
-                Ok(vec![Selector::Name("true".to_string())])
-            }
-            Some(TokenKind::False) => {
-                self.advance();
-                Ok(vec![Selector::Name("false".to_string())])
-            }
-            Some(TokenKind::Null) => {
-                self.advance();
-                Ok(vec![Selector::Name("null".to_string())])
             }
             Some(TokenKind::Wildcard) => {
                 self.advance();
@@ -345,6 +337,17 @@ impl Parser {
 
     fn advance(&mut self) {
         self.index += 1;
+    }
+
+    /// Convert keyword TokenKind to property name string
+    /// RFC 9535: Keywords (true, false, null) are valid as property names
+    fn keyword_to_property_name(kind: &TokenKind) -> Option<&'static str> {
+        match kind {
+            TokenKind::True => Some("true"),
+            TokenKind::False => Some("false"),
+            TokenKind::Null => Some("null"),
+            _ => None,
+        }
     }
 
     // ========== Expression Parsing ==========
@@ -673,23 +676,15 @@ impl Parser {
 
     /// Parse selectors after '.' or '..' in filter path
     fn parse_filter_selectors_after_dot(&mut self) -> Result<Vec<Selector>, ParseError> {
+        // RFC 9535: Keywords are valid as property names in dot notation
+        if let Some(name) = self.current_kind().and_then(Self::keyword_to_property_name) {
+            self.advance();
+            return Ok(vec![Selector::Name(name.to_string())]);
+        }
         match self.current_kind().cloned() {
             Some(TokenKind::Ident(name)) => {
                 self.advance();
                 Ok(vec![Selector::Name(name)])
-            }
-            // RFC 9535: Keywords are valid as property names in dot notation
-            Some(TokenKind::True) => {
-                self.advance();
-                Ok(vec![Selector::Name("true".to_string())])
-            }
-            Some(TokenKind::False) => {
-                self.advance();
-                Ok(vec![Selector::Name("false".to_string())])
-            }
-            Some(TokenKind::Null) => {
-                self.advance();
-                Ok(vec![Selector::Name("null".to_string())])
             }
             Some(TokenKind::Wildcard) => {
                 self.advance();
