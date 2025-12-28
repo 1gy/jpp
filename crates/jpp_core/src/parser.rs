@@ -655,6 +655,32 @@ impl Parser {
                 self.advance();
                 Ok(vec![Selector::Wildcard])
             }
+            // RFC 9535: Bracket selectors can follow '.' or '..' (e.g., $..['key'])
+            Some(TokenKind::BracketOpen) => {
+                self.advance(); // consume '['
+                let mut selectors = Vec::new();
+                loop {
+                    let selector = self.parse_filter_bracket_selector()?;
+                    selectors.push(selector);
+                    match self.current_kind() {
+                        Some(TokenKind::Comma) => {
+                            self.advance();
+                            continue;
+                        }
+                        Some(TokenKind::BracketClose) => {
+                            self.advance();
+                            break;
+                        }
+                        _ => {
+                            return Err(ParseError {
+                                message: "expected ',' or ']'".to_string(),
+                                position: self.current_position(),
+                            });
+                        }
+                    }
+                }
+                Ok(selectors)
+            }
             Some(kind) => Err(ParseError {
                 message: format!("expected identifier or wildcard after '.', got {kind:?}"),
                 position: self.current_position(),
