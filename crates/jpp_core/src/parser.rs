@@ -273,7 +273,12 @@ impl Parser {
             let n = *n;
             // For index/slice, we need an integer value
             // Check if it's a whole number and within i64 range
-            if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
+            // RFC 9535: -0 is not valid for index/slice selectors
+            if n.fract() == 0.0
+                && n >= i64::MIN as f64
+                && n <= i64::MAX as f64
+                && !(n == 0.0 && n.is_sign_negative())
+            {
                 self.advance();
                 Some(n as i64)
             } else {

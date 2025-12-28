@@ -411,7 +411,14 @@ impl<'a> Lexer<'a> {
         }
 
         let is_negative = num_str.starts_with('-');
-        let mut has_fraction_or_exp = false;
+
+        // RFC 9535: A negative number must have at least one integer digit (reject "-.1")
+        if is_negative && int_part.is_empty() {
+            return Err(LexerError {
+                message: "negative number must have integer digit".to_string(),
+                position: start_pos,
+            });
+        }
 
         // Decimal part (optional)
         if self.chars.peek() == Some(&'.') {
@@ -419,7 +426,6 @@ impl<'a> Lexer<'a> {
             let mut chars_clone = self.chars.clone();
             chars_clone.next(); // consume the '.'
             if chars_clone.peek().is_some_and(|c| c.is_ascii_digit()) {
-                has_fraction_or_exp = true;
                 if let Some(dot) = self.advance() {
                     num_str.push(dot); // consume '.'
                 }
@@ -437,7 +443,6 @@ impl<'a> Lexer<'a> {
 
         // Exponent part (optional)
         if self.chars.peek().is_some_and(|&c| c == 'e' || c == 'E') {
-            has_fraction_or_exp = true;
             if let Some(e) = self.advance() {
                 num_str.push(e); // consume 'e' or 'E'
             }
@@ -475,13 +480,7 @@ impl<'a> Lexer<'a> {
             });
         }
 
-        // RFC 9535: Reject "-0" as integer (but allow -0.5, -0e1, etc.)
-        if is_negative && int_part == "0" && !has_fraction_or_exp {
-            return Err(LexerError {
-                message: "-0 is not allowed".to_string(),
-                position: start_pos,
-            });
-        }
+        // Note: -0 is valid per RFC 9535 and equals 0
 
         let value: f64 = num_str.parse().map_err(|_| LexerError {
             message: "number out of range".to_string(),
