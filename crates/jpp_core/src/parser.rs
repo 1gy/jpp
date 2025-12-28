@@ -320,8 +320,14 @@ impl Parser {
         let mut left = self.parse_and_expression()?;
 
         while self.current_kind() == Some(&TokenKind::Or) {
+            let op_pos = self.current_position();
             self.advance(); // consume '||'
             let right = self.parse_and_expression()?;
+
+            // RFC 9535: Logical operators require LogicalType operands (not bare literals)
+            Self::validate_logical_operand(&left, op_pos)?;
+            Self::validate_logical_operand(&right, op_pos)?;
+
             left = Expr::Logical {
                 left: Box::new(left),
                 op: LogicalOp::Or,
@@ -337,8 +343,14 @@ impl Parser {
         let mut left = self.parse_comparison_expression()?;
 
         while self.current_kind() == Some(&TokenKind::And) {
+            let op_pos = self.current_position();
             self.advance(); // consume '&&'
             let right = self.parse_comparison_expression()?;
+
+            // RFC 9535: Logical operators require LogicalType operands (not bare literals)
+            Self::validate_logical_operand(&left, op_pos)?;
+            Self::validate_logical_operand(&right, op_pos)?;
+
             left = Expr::Logical {
                 left: Box::new(left),
                 op: LogicalOp::And,
@@ -347,6 +359,18 @@ impl Parser {
         }
 
         Ok(left)
+    }
+
+    /// Validate that an expression is a valid LogicalType operand for && or ||
+    /// RFC 9535: Bare literals are not allowed as operands of logical operators
+    fn validate_logical_operand(expr: &Expr, pos: usize) -> Result<(), ParseError> {
+        if matches!(expr, Expr::Literal(_)) {
+            return Err(ParseError {
+                message: "literal cannot be used as operand of logical operator".to_string(),
+                position: pos,
+            });
+        }
+        Ok(())
     }
 
     /// Check if an expression is a singular query (returns at most one value)
