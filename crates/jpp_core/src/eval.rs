@@ -4,6 +4,46 @@ use crate::ast::{CompOp, Expr, JsonPath, Literal, LogicalOp, Segment, Selector};
 use regex::Regex;
 use serde_json::Value;
 
+/// Transform regex pattern for I-Regexp compliance (RFC 9535).
+/// Per RFC 9535, `.` should NOT match \r (U+000D) in addition to \n which Rust already excludes.
+/// Note: Unlike ECMAScript, I-Regexp's `.` DOES match \u2028 and \u2029.
+fn transform_pattern_for_iregexp(pattern: &str) -> String {
+    let mut result = String::with_capacity(pattern.len() * 2);
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut i = 0;
+    let mut in_char_class = false;
+
+    while i < chars.len() {
+        let c = chars[i];
+
+        if c == '\\' && i + 1 < chars.len() {
+            // Escaped character - pass through as-is
+            result.push(c);
+            result.push(chars[i + 1]);
+            i += 2;
+            continue;
+        }
+
+        if c == '[' && !in_char_class {
+            in_char_class = true;
+            result.push(c);
+        } else if c == ']' && in_char_class {
+            in_char_class = false;
+            result.push(c);
+        } else if c == '.' && !in_char_class {
+            // Replace unescaped . outside character class with I-Regexp compliant class
+            // Excludes: \n (U+000A - already excluded by Rust), \r (U+000D)
+            result.push_str("[^\\r\\n]");
+        } else {
+            result.push(c);
+        }
+
+        i += 1;
+    }
+
+    result
+}
+
 /// Result of evaluating an expression
 #[derive(Debug, Clone)]
 enum ExprResult {
@@ -401,8 +441,9 @@ fn fn_match(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
         _ => return ExprResult::Value(Value::Bool(false)),
     };
 
-    // Create anchored regex for full match
-    let anchored_pattern = format!("^(?:{})$", pattern);
+    // Transform pattern for I-Regexp compliance and create anchored regex for full match
+    let transformed = transform_pattern_for_iregexp(&pattern);
+    let anchored_pattern = format!("^(?:{})$", transformed);
     match Regex::new(&anchored_pattern) {
         Ok(re) => ExprResult::Value(Value::Bool(re.is_match(&string))),
         Err(_) => ExprResult::Value(Value::Bool(false)),
@@ -428,7 +469,9 @@ fn fn_search(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
         _ => return ExprResult::Value(Value::Bool(false)),
     };
 
-    match Regex::new(&pattern) {
+    // Transform pattern for I-Regexp compliance
+    let transformed = transform_pattern_for_iregexp(&pattern);
+    match Regex::new(&transformed) {
         Ok(re) => ExprResult::Value(Value::Bool(re.is_match(&string))),
         Err(_) => ExprResult::Value(Value::Bool(false)),
     }
