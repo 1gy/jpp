@@ -367,12 +367,20 @@ impl<'a> Lexer<'a> {
     }
 }
 
+/// Check if character is valid as the start of an identifier (RFC 9535 name-first)
+/// name-first = ALPHA / "_" / %x80-D7FF / %xE000-10FFFF
 fn is_ident_start(ch: char) -> bool {
-    ch.is_alphabetic() || ch == '_'
+    let code = ch as u32;
+    ch.is_ascii_alphabetic()
+        || ch == '_'
+        || (0x80..=0xD7FF).contains(&code)
+        || (0xE000..=0x10FFFF).contains(&code)
 }
 
+/// Check if character is valid within an identifier (RFC 9535 name-char)
+/// name-char = name-first / DIGIT
 fn is_ident_char(ch: char) -> bool {
-    ch.is_alphanumeric() || ch == '_'
+    is_ident_start(ch) || ch.is_ascii_digit()
 }
 
 #[cfg(test)]
@@ -622,5 +630,59 @@ mod tests {
         let result = Lexer::new("=").tokenize();
         assert!(result.is_err());
         assert!(result.unwrap_err().message.contains("expected '=='"));
+    }
+
+    // ========== Unicode Identifier Tests ==========
+
+    #[test]
+    fn test_unicode_emoji_identifier() {
+        let tokens = Lexer::new("$.☺").tokenize().unwrap();
+        assert_eq!(
+            kinds(&tokens),
+            vec![
+                &TokenKind::Root,
+                &TokenKind::Dot,
+                &TokenKind::Ident("☺".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn test_unicode_japanese_identifier() {
+        let tokens = Lexer::new("$.日本語").tokenize().unwrap();
+        assert_eq!(
+            kinds(&tokens),
+            vec![
+                &TokenKind::Root,
+                &TokenKind::Dot,
+                &TokenKind::Ident("日本語".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn test_unicode_accented_identifier() {
+        let tokens = Lexer::new("$.émoji").tokenize().unwrap();
+        assert_eq!(
+            kinds(&tokens),
+            vec![
+                &TokenKind::Root,
+                &TokenKind::Dot,
+                &TokenKind::Ident("émoji".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn test_unicode_mixed_identifier() {
+        let tokens = Lexer::new("$.hello世界123").tokenize().unwrap();
+        assert_eq!(
+            kinds(&tokens),
+            vec![
+                &TokenKind::Root,
+                &TokenKind::Dot,
+                &TokenKind::Ident("hello世界123".to_string())
+            ]
+        );
     }
 }
