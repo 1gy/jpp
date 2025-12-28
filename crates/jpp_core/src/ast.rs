@@ -101,8 +101,8 @@ pub enum Literal {
     Null,
     /// Boolean value
     Bool(bool),
-    /// Integer number
-    Number(i64),
+    /// Number (integer or floating-point)
+    Number(f64),
     /// String value
     String(String),
 }

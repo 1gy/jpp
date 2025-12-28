@@ -248,8 +248,14 @@ impl Parser {
     fn try_parse_number(&mut self) -> Option<i64> {
         if let Some(TokenKind::Number(n)) = self.current_kind() {
             let n = *n;
-            self.advance();
-            Some(n)
+            // For index/slice, we need an integer value
+            // Check if it's a whole number and within i64 range
+            if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
+                self.advance();
+                Some(n as i64)
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -714,7 +720,7 @@ mod tests {
                                 _ => panic!("expected Path on left"),
                             }
                             // right should be 10
-                            assert_eq!(**right, Expr::Literal(Literal::Number(10)));
+                            assert_eq!(**right, Expr::Literal(Literal::Number(10.0)));
                         }
                         _ => panic!("expected Comparison expression"),
                     },
@@ -798,7 +804,7 @@ mod tests {
                             }
                             _ => panic!("expected FunctionCall on left"),
                         }
-                        assert_eq!(**right, Expr::Literal(Literal::Number(0)));
+                        assert_eq!(**right, Expr::Literal(Literal::Number(0.0)));
                     }
                     _ => panic!("expected Comparison expression"),
                 },

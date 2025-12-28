@@ -312,7 +312,13 @@ fn literal_to_value(lit: &Literal) -> Value {
     match lit {
         Literal::Null => Value::Null,
         Literal::Bool(b) => Value::Bool(*b),
-        Literal::Number(n) => Value::Number((*n).into()),
+        Literal::Number(n) => {
+            // Try to create a JSON number from f64
+            // This will fail for NaN/Infinity, in which case we return Null
+            serde_json::Number::from_f64(*n)
+                .map(Value::Number)
+                .unwrap_or(Value::Null)
+        }
         Literal::String(s) => Value::String(s.clone()),
     }
 }
@@ -729,6 +735,51 @@ mod tests {
         let results = query("$.items[?@.name == \"banana\"]", &json);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0]["name"], "banana");
+    }
+
+    #[test]
+    fn test_filter_comparison_float() {
+        let json = json!({
+            "items": [
+                {"name": "apple", "price": 1.5},
+                {"name": "banana", "price": 2.5},
+                {"name": "cherry", "price": 3.5}
+            ]
+        });
+        // Test equality with float literal
+        let results = query("$.items[?@.price == 2.5]", &json);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["name"], "banana");
+
+        // Test less-than with float literal
+        let results = query("$.items[?@.price < 2.0]", &json);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["name"], "apple");
+
+        // Test greater-than with float literal
+        let results = query("$.items[?@.price > 3.0]", &json);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["name"], "cherry");
+    }
+
+    #[test]
+    fn test_filter_comparison_float_exponent() {
+        let json = json!({
+            "items": [
+                {"name": "small", "value": 1e-3},
+                {"name": "medium", "value": 1.0},
+                {"name": "large", "value": 1e3}
+            ]
+        });
+        // Test with exponent notation
+        let results = query("$.items[?@.value == 1e3]", &json);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["name"], "large");
+
+        // Test with negative exponent
+        let results = query("$.items[?@.value < 1e-2]", &json);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["name"], "small");
     }
 
     #[test]
