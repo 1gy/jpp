@@ -1075,21 +1075,16 @@ mod tests {
 
     #[test]
     fn test_non_singular_wildcard_comparison_rejected() {
-        // RFC 9535: @[*] returning multiple values is non-singular, comparison returns false
-        let json = json!([[1, 2, 3], [1, 1], [5, 6]]);
-        // $[?@[*] == 1] should not match arrays with multiple elements
-        // because @[*] returns multiple values, making it non-singular
-        let results = query("$[?@[*] == 1]", &json);
-        assert_eq!(results.len(), 0);
-    }
-
-    #[test]
-    fn test_singular_single_element_array_works() {
-        // Single-element array with wildcard returns 1 value (singular at runtime)
-        let json = json!([[1], [2], [1]]);
-        // @[*] on single-element arrays returns 1 value, so comparison works
-        let results = query("$[?@[*] == 1]", &json);
-        assert_eq!(results.len(), 2);
+        // RFC 9535: @[*] is non-singular and must be rejected at parse time
+        use crate::parser::Parser;
+        let result = Parser::parse("$[?@[*] == 1]");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("non-singular query not allowed")
+        );
     }
 
     #[test]
@@ -1117,15 +1112,15 @@ mod tests {
 
     #[test]
     fn test_non_singular_on_right_side_rejected() {
-        // Non-singular on right side should also be rejected
-        let json = json!({
-            "items": [
-                {"val": 1, "arr": [1, 2]},
-                {"val": 2, "arr": [2, 3]}
-            ]
-        });
-        // Comparison with non-singular on right side
-        let results = query("$.items[?@.val == @.arr[*]]", &json);
-        assert_eq!(results.len(), 0);
+        // RFC 9535: Non-singular on right side must be rejected at parse time
+        use crate::parser::Parser;
+        let result = Parser::parse("$.items[?@.val == @.arr[*]]");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("non-singular query not allowed")
+        );
     }
 }

@@ -344,6 +344,24 @@ impl Parser {
         Ok(left)
     }
 
+    /// Check if an expression is a singular query (returns at most one value)
+    /// RFC 9535 requires comparison operands to be singular queries
+    fn is_singular_query(expr: &Expr) -> bool {
+        match expr {
+            Expr::Path { segments, .. } => segments.iter().all(|seg| match seg {
+                Segment::Child(selectors) => {
+                    selectors.len() == 1
+                        && matches!(&selectors[0], Selector::Name(_) | Selector::Index(_))
+                }
+                Segment::Descendant(_) => false,
+            }),
+            Expr::CurrentNode | Expr::RootNode => true,
+            Expr::Literal(_) => true,
+            Expr::FunctionCall { .. } => true,
+            _ => false,
+        }
+    }
+
     /// Parse comparison expression: expr op expr
     fn parse_comparison_expression(&mut self) -> Result<Expr, ParseError> {
         let left = self.parse_unary_expression()?;
@@ -359,8 +377,24 @@ impl Parser {
         };
 
         if let Some(op) = op {
+            let op_pos = self.current_position();
             self.advance(); // consume operator
             let right = self.parse_unary_expression()?;
+
+            // RFC 9535: Both sides of comparison must be singular queries
+            if !Self::is_singular_query(&left) {
+                return Err(ParseError {
+                    message: "non-singular query not allowed in comparison".to_string(),
+                    position: op_pos,
+                });
+            }
+            if !Self::is_singular_query(&right) {
+                return Err(ParseError {
+                    message: "non-singular query not allowed in comparison".to_string(),
+                    position: op_pos,
+                });
+            }
+
             Ok(Expr::Comparison {
                 left: Box::new(left),
                 op,
