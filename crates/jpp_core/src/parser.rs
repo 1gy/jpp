@@ -6,6 +6,9 @@ use crate::lexer::{Lexer, LexerError, Token, TokenKind};
 /// RFC 9535: Functions that return LogicalType (cannot be used in comparisons)
 const LOGICAL_TYPE_FUNCTIONS: &[&str] = &["match", "search"];
 
+/// RFC 9535: Functions that return ComparisonType (must be compared, cannot be existence test)
+const COMPARISON_TYPE_FUNCTIONS: &[&str] = &["count", "length", "value"];
+
 /// Parser error
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParseError {
@@ -223,7 +226,7 @@ impl Parser {
                 // RFC 9535: ComparisonType functions (count, length, value) must be compared
                 // They cannot be used as standalone existence tests
                 if let Expr::FunctionCall { name, .. } = &expr
-                    && matches!(name.as_str(), "count" | "length" | "value")
+                    && COMPARISON_TYPE_FUNCTIONS.contains(&name.as_str())
                 {
                     return Err(ParseError {
                         message: format!(
@@ -826,10 +829,8 @@ impl Parser {
                     Segment::Descendant(_) => false,
                 })
             }
-            // FunctionCalls that return ValueType are allowed
-            Expr::FunctionCall { name, .. } => {
-                matches!(name.as_str(), "length" | "count" | "value")
-            }
+            // FunctionCalls that return ValueType are allowed (ComparisonType functions)
+            Expr::FunctionCall { name, .. } => COMPARISON_TYPE_FUNCTIONS.contains(&name.as_str()),
             _ => false,
         }
     }
