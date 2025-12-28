@@ -59,7 +59,8 @@ pub enum TokenKind {
     /// String literal (single or double quoted)
     String(String),
     /// Number (integer or floating-point)
-    Number(f64),
+    /// The bool flag indicates if the number was written with a decimal point or exponent
+    Number(f64, bool),
 }
 
 /// Token with position information
@@ -420,12 +421,16 @@ impl<'a> Lexer<'a> {
             });
         }
 
+        // Track if number has decimal point or exponent (makes it a "float")
+        let mut has_decimal_or_exp = false;
+
         // Decimal part (optional)
         if self.chars.peek() == Some(&'.') {
             // Peek ahead to ensure it's followed by a digit (not another dot like ..)
             let mut chars_clone = self.chars.clone();
             chars_clone.next(); // consume the '.'
             if chars_clone.peek().is_some_and(|c| c.is_ascii_digit()) {
+                has_decimal_or_exp = true;
                 if let Some(dot) = self.advance() {
                     num_str.push(dot); // consume '.'
                 }
@@ -443,6 +448,7 @@ impl<'a> Lexer<'a> {
 
         // Exponent part (optional)
         if self.chars.peek().is_some_and(|&c| c == 'e' || c == 'E') {
+            has_decimal_or_exp = true;
             if let Some(e) = self.advance() {
                 num_str.push(e); // consume 'e' or 'E'
             }
@@ -487,7 +493,7 @@ impl<'a> Lexer<'a> {
             position: start_pos,
         })?;
 
-        Ok(TokenKind::Number(value))
+        Ok(TokenKind::Number(value, has_decimal_or_exp))
     }
 
     fn read_ident_or_keyword(&mut self) -> TokenKind {
@@ -573,7 +579,7 @@ mod tests {
             vec![
                 &TokenKind::Root,
                 &TokenKind::BracketOpen,
-                &TokenKind::Number(0.0),
+                &TokenKind::Number(0.0, false),
                 &TokenKind::BracketClose
             ]
         );
@@ -587,7 +593,7 @@ mod tests {
             vec![
                 &TokenKind::Root,
                 &TokenKind::BracketOpen,
-                &TokenKind::Number(-1.0),
+                &TokenKind::Number(-1.0, false),
                 &TokenKind::BracketClose
             ]
         );
@@ -724,7 +730,7 @@ mod tests {
                 &TokenKind::Dot,
                 &TokenKind::Ident("price".to_string()),
                 &TokenKind::LessThan,
-                &TokenKind::Number(10.0),
+                &TokenKind::Number(10.0, false),
                 &TokenKind::BracketClose
             ]
         );
@@ -745,7 +751,7 @@ mod tests {
                 &TokenKind::Dot,
                 &TokenKind::Ident("price".to_string()),
                 &TokenKind::GreaterEq,
-                &TokenKind::Number(10.0),
+                &TokenKind::Number(10.0, false),
                 &TokenKind::And,
                 &TokenKind::At,
                 &TokenKind::Dot,
@@ -783,49 +789,49 @@ mod tests {
     #[test]
     fn test_float_decimal() {
         let tokens = Lexer::new("1.5").tokenize().unwrap();
-        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(1.5)]);
+        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(1.5, true)]);
     }
 
     #[test]
     fn test_float_multiple_decimals() {
         let tokens = Lexer::new("3.12345").tokenize().unwrap();
-        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(3.12345)]);
+        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(3.12345, true)]);
     }
 
     #[test]
     fn test_float_exponent() {
         let tokens = Lexer::new("1e10").tokenize().unwrap();
-        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(1e10)]);
+        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(1e10, true)]);
     }
 
     #[test]
     fn test_float_exponent_uppercase() {
         let tokens = Lexer::new("1E10").tokenize().unwrap();
-        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(1e10)]);
+        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(1e10, true)]);
     }
 
     #[test]
     fn test_float_exponent_negative() {
         let tokens = Lexer::new("1e-3").tokenize().unwrap();
-        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(1e-3)]);
+        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(1e-3, true)]);
     }
 
     #[test]
     fn test_float_exponent_positive() {
         let tokens = Lexer::new("1e+3").tokenize().unwrap();
-        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(1e3)]);
+        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(1e3, true)]);
     }
 
     #[test]
     fn test_float_full() {
         let tokens = Lexer::new("1.5e-3").tokenize().unwrap();
-        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(1.5e-3)]);
+        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(1.5e-3, true)]);
     }
 
     #[test]
     fn test_negative_float() {
         let tokens = Lexer::new("-1.5").tokenize().unwrap();
-        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(-1.5)]);
+        assert_eq!(kinds(&tokens), vec![&TokenKind::Number(-1.5, true)]);
     }
 
     // ========== Unicode Identifier Tests ==========

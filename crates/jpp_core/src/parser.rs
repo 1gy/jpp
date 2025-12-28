@@ -214,7 +214,7 @@ impl Parser {
                 self.advance();
                 Ok(Selector::Name(s))
             }
-            Some(TokenKind::Number(_)) | Some(TokenKind::Colon) => self.parse_index_or_slice(),
+            Some(TokenKind::Number(_, _)) | Some(TokenKind::Colon) => self.parse_index_or_slice(),
             Some(TokenKind::Question) => {
                 self.advance(); // consume '?'
                 let expr = self.parse_expression()?;
@@ -240,7 +240,7 @@ impl Parser {
 
     fn parse_index_or_slice(&mut self) -> Result<Selector, ParseError> {
         // Parse: number, :, number:, :number, number:number, number:number:number, etc.
-        let start = self.try_parse_number();
+        let start = self.try_parse_index_number()?;
 
         if self.current_kind() != Some(&TokenKind::Colon) {
             // Just an index
@@ -256,11 +256,11 @@ impl Parser {
         // It's a slice
         self.advance(); // consume first ':'
 
-        let end = self.try_parse_number();
+        let end = self.try_parse_index_number()?;
 
         let step = if self.current_kind() == Some(&TokenKind::Colon) {
             self.advance(); // consume second ':'
-            self.try_parse_number()
+            self.try_parse_index_number()?
         } else {
             None
         };
@@ -268,24 +268,47 @@ impl Parser {
         Ok(Selector::Slice { start, end, step })
     }
 
-    fn try_parse_number(&mut self) -> Option<i64> {
-        if let Some(TokenKind::Number(n)) = self.current_kind() {
+    /// RFC 9535 exact integer range: -(2^53-1) to (2^53-1)
+    const RFC9535_MIN_INT: i64 = -9007199254740991; // -(2^53 - 1)
+    const RFC9535_MAX_INT: i64 = 9007199254740991; // 2^53 - 1
+
+    /// Try to parse a number for index/slice selector
+    /// Returns Ok(Some(n)) if valid integer, Ok(None) if no number token, Err if invalid
+    fn try_parse_index_number(&mut self) -> Result<Option<i64>, ParseError> {
+        if let Some(TokenKind::Number(n, has_decimal_or_exp)) = self.current_kind() {
             let n = *n;
-            // For index/slice, we need an integer value
-            // Check if it's a whole number and within i64 range
+            let has_decimal_or_exp = *has_decimal_or_exp;
+            let pos = self.current_position();
+
             // RFC 9535: -0 is not valid for index/slice selectors
-            if n.fract() == 0.0
-                && n >= i64::MIN as f64
-                && n <= i64::MAX as f64
-                && !(n == 0.0 && n.is_sign_negative())
-            {
-                self.advance();
-                Some(n as i64)
-            } else {
-                None
+            if n == 0.0 && n.is_sign_negative() {
+                return Err(ParseError {
+                    message: "-0 is not valid for index selector".to_string(),
+                    position: pos,
+                });
             }
+
+            // RFC 9535: Index must be written as integer (no decimal point or exponent)
+            if has_decimal_or_exp {
+                return Err(ParseError {
+                    message: "index must be an integer, not a decimal".to_string(),
+                    position: pos,
+                });
+            }
+
+            // Check RFC 9535 exact integer range
+            if n < Self::RFC9535_MIN_INT as f64 || n > Self::RFC9535_MAX_INT as f64 {
+                return Err(ParseError {
+                    message: "index out of range (must be between -(2^53-1) and 2^53-1)"
+                        .to_string(),
+                    position: pos,
+                });
+            }
+
+            self.advance();
+            Ok(Some(n as i64))
         } else {
-            None
+            Ok(None)
         }
     }
 
@@ -468,7 +491,7 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Literal(Literal::Null))
             }
-            Some(TokenKind::Number(n)) => {
+            Some(TokenKind::Number(n, _)) => {
                 self.advance();
                 Ok(Expr::Literal(Literal::Number(n)))
             }
@@ -641,7 +664,7 @@ impl Parser {
                 self.advance();
                 Ok(Selector::Name(s))
             }
-            Some(TokenKind::Number(_)) | Some(TokenKind::Colon) => self.parse_index_or_slice(),
+            Some(TokenKind::Number(_, _)) | Some(TokenKind::Colon) => self.parse_index_or_slice(),
             Some(TokenKind::Question) => {
                 // Nested filter expression: [?expr]
                 self.advance(); // consume '?'
