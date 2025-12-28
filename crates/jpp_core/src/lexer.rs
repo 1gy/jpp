@@ -264,6 +264,26 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Read 4 hex digits for \uXXXX escape and return the code point
+    fn read_unicode_escape(&mut self) -> Result<u32, LexerError> {
+        let mut hex = String::with_capacity(4);
+        for _ in 0..4 {
+            match self.advance() {
+                Some(ch) if ch.is_ascii_hexdigit() => hex.push(ch),
+                _ => {
+                    return Err(LexerError {
+                        message: "invalid unicode escape: expected 4 hex digits".to_string(),
+                        position: self.position,
+                    });
+                }
+            }
+        }
+        u32::from_str_radix(&hex, 16).map_err(|_| LexerError {
+            message: "invalid unicode escape".to_string(),
+            position: self.position,
+        })
+    }
+
     fn read_string(&mut self) -> Result<TokenKind, LexerError> {
         let quote = self.advance().ok_or_else(|| LexerError {
             message: "unexpected end of input".to_string(),
@@ -288,6 +308,46 @@ impl<'a> Lexer<'a> {
                         '\\' => value.push('\\'),
                         '\'' => value.push('\''),
                         '"' => value.push('"'),
+                        'b' => value.push('\x08'),
+                        'f' => value.push('\x0C'),
+                        '/' => value.push('/'),
+                        'u' => {
+                            let code = self.read_unicode_escape()?;
+                            // Check for surrogate pair
+                            if (0xD800..=0xDBFF).contains(&code) {
+                                // High surrogate - expect \uXXXX low surrogate
+                                if self.advance() != Some('\\') || self.advance() != Some('u') {
+                                    return Err(LexerError {
+                                        message: "invalid surrogate pair".to_string(),
+                                        position: self.position,
+                                    });
+                                }
+                                let low = self.read_unicode_escape()?;
+                                if !(0xDC00..=0xDFFF).contains(&low) {
+                                    return Err(LexerError {
+                                        message: "invalid low surrogate".to_string(),
+                                        position: self.position,
+                                    });
+                                }
+                                // Combine surrogate pair
+                                let combined = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+                                if let Some(ch) = char::from_u32(combined) {
+                                    value.push(ch);
+                                } else {
+                                    return Err(LexerError {
+                                        message: "invalid unicode code point".to_string(),
+                                        position: self.position,
+                                    });
+                                }
+                            } else if let Some(ch) = char::from_u32(code) {
+                                value.push(ch);
+                            } else {
+                                return Err(LexerError {
+                                    message: "invalid unicode code point".to_string(),
+                                    position: self.position,
+                                });
+                            }
+                        }
                         _ => {
                             return Err(LexerError {
                                 message: format!("invalid escape sequence: \\{escaped}"),
