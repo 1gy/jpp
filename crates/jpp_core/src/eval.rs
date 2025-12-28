@@ -191,7 +191,10 @@ fn evaluate_filter<'a>(expr: &Expr, node: &'a Value, root: &'a Value) -> Vec<&'a
 /// Evaluate an expression in filter context
 fn evaluate_expr(expr: &Expr, current: &Value, root: &Value) -> ExprResult {
     match expr {
-        Expr::CurrentNode => ExprResult::Value(current.clone()),
+        // RFC 9535: Bare @ in filter expression is an existence test.
+        // Return as NodeList so is_truthy() checks existence, not value truthiness.
+        // This ensures $[?@] includes null values (they exist, even if not truthy).
+        Expr::CurrentNode => ExprResult::NodeList(vec![current.clone()]),
         Expr::RootNode => ExprResult::Value(root.clone()),
         Expr::Path { start, segments } => {
             let start_value = match start.as_ref() {
