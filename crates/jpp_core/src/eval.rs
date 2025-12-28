@@ -343,7 +343,10 @@ fn fn_length(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
 
     let arg = evaluate_expr(&args[0], current, root);
     match arg.to_value() {
-        Some(Value::String(s)) => ExprResult::Value(Value::Number(s.len().into())),
+        Some(Value::String(s)) => {
+            // Count Unicode code points, not bytes (RFC 9535 requires character count)
+            ExprResult::Value(Value::Number(s.chars().count().into()))
+        }
         Some(Value::Array(arr)) => ExprResult::Value(Value::Number(arr.len().into())),
         Some(Value::Object(obj)) => ExprResult::Value(Value::Number(obj.len().into())),
         _ => ExprResult::Nothing,
