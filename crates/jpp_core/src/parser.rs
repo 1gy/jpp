@@ -881,7 +881,7 @@ impl Parser {
                     });
                 }
             }
-            // match(ValueType, ValueType) - exactly 2 arguments
+            // match(ValueType, ValueType) - exactly 2 arguments, both must be ValueType
             "match" => {
                 if args.len() != 2 {
                     return Err(ParseError {
@@ -892,8 +892,25 @@ impl Parser {
                         position: pos,
                     });
                 }
+                // RFC 9535: Both arguments must be ValueType (singular query or literal)
+                if !Self::is_value_type(&args[0]) {
+                    return Err(ParseError {
+                        message:
+                            "function 'match' first argument must be a singular query or literal"
+                                .to_string(),
+                        position: pos,
+                    });
+                }
+                if !Self::is_value_type(&args[1]) {
+                    return Err(ParseError {
+                        message:
+                            "function 'match' second argument must be a singular query or literal"
+                                .to_string(),
+                        position: pos,
+                    });
+                }
             }
-            // search(ValueType, ValueType) - exactly 2 arguments
+            // search(ValueType, ValueType) - exactly 2 arguments, both must be ValueType
             "search" => {
                 if args.len() != 2 {
                     return Err(ParseError {
@@ -901,6 +918,23 @@ impl Parser {
                             "function 'search' requires exactly 2 arguments, got {}",
                             args.len()
                         ),
+                        position: pos,
+                    });
+                }
+                // RFC 9535: Both arguments must be ValueType (singular query or literal)
+                if !Self::is_value_type(&args[0]) {
+                    return Err(ParseError {
+                        message:
+                            "function 'search' first argument must be a singular query or literal"
+                                .to_string(),
+                        position: pos,
+                    });
+                }
+                if !Self::is_value_type(&args[1]) {
+                    return Err(ParseError {
+                        message:
+                            "function 'search' second argument must be a singular query or literal"
+                                .to_string(),
                         position: pos,
                     });
                 }
@@ -1438,5 +1472,44 @@ mod tests {
         // LogicalType functions CAN be used as existence tests
         assert!(Parser::parse("$[?match(@.x, \"a\")]").is_ok());
         assert!(Parser::parse("$[?search(@.x, \"a\")]").is_ok());
+    }
+
+    #[test]
+    fn test_match_search_value_type_validation() {
+        // RFC 9535: match/search require ValueType arguments (singular query or literal)
+
+        // Non-singular query (wildcard) as first argument - should fail
+        let result = Parser::parse("$[?match(@[*], \"a\")]");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("first argument must be a singular query or literal")
+        );
+
+        let result = Parser::parse("$[?search(@[*], \"a\")]");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("first argument must be a singular query or literal")
+        );
+
+        // Non-singular query (descendant) as first argument - should fail
+        let result = Parser::parse("$[?match(@..x, \"a\")]");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("first argument must be a singular query or literal")
+        );
+
+        // Singular query and literal - should pass
+        assert!(Parser::parse("$[?match(@.x, \"a\")]").is_ok());
+        assert!(Parser::parse("$[?search(@.name, \"pattern\")]").is_ok());
+        assert!(Parser::parse("$[?match(\"test\", \"t.*\")]").is_ok());
     }
 }
