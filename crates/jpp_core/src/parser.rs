@@ -225,6 +225,19 @@ impl Parser {
                         position: self.current_position(),
                     });
                 }
+                // RFC 9535: ComparisonType functions (count, length, value) must be compared
+                // They cannot be used as standalone existence tests
+                if let Expr::FunctionCall { name, .. } = &expr
+                    && matches!(name.as_str(), "count" | "length" | "value")
+                {
+                    return Err(ParseError {
+                        message: format!(
+                            "function '{}' returns a value that must be compared",
+                            name
+                        ),
+                        position: self.current_position(),
+                    });
+                }
                 Ok(Selector::Filter(Box::new(expr)))
             }
             Some(kind) => Err(ParseError {
@@ -443,6 +456,30 @@ impl Parser {
             if !Self::is_singular_query(&right) {
                 return Err(ParseError {
                     message: "non-singular query not allowed in comparison".to_string(),
+                    position: op_pos,
+                });
+            }
+
+            // RFC 9535: LogicalType functions (match, search) cannot be compared
+            if let Expr::FunctionCall { name, .. } = &left
+                && matches!(name.as_str(), "match" | "search")
+            {
+                return Err(ParseError {
+                    message: format!(
+                        "function '{}' returns LogicalType and cannot be compared",
+                        name
+                    ),
+                    position: op_pos,
+                });
+            }
+            if let Expr::FunctionCall { name, .. } = &right
+                && matches!(name.as_str(), "match" | "search")
+            {
+                return Err(ParseError {
+                    message: format!(
+                        "function '{}' returns LogicalType and cannot be compared",
+                        name
+                    ),
                     position: op_pos,
                 });
             }
@@ -775,6 +812,28 @@ impl Parser {
         matches!(expr, Expr::CurrentNode | Expr::RootNode | Expr::Path { .. })
     }
 
+    /// Check if an expression is ValueType (singular query or literal)
+    /// RFC 9535: ValueType can be used where a single value is expected
+    fn is_value_type(expr: &Expr) -> bool {
+        match expr {
+            Expr::Literal(_) => true,
+            Expr::CurrentNode | Expr::RootNode => true, // Bare @ or $ is singular
+            Expr::Path { segments, .. } => {
+                // Path must be singular: only single name/index selectors, no descendants
+                segments.iter().all(|seg| match seg {
+                    Segment::Child(selectors) => {
+                        selectors.len() == 1
+                            && matches!(&selectors[0], Selector::Name(_) | Selector::Index(_))
+                    }
+                    Segment::Descendant(_) => false,
+                })
+            }
+            // FunctionCalls that return ValueType are allowed
+            Expr::FunctionCall { name, .. } => matches!(name.as_str(), "length" | "count" | "value"),
+            _ => false,
+        }
+    }
+
     /// Validate function parameter count and types per RFC 9535
     fn validate_function_params(
         &self,
@@ -802,7 +861,7 @@ impl Parser {
                     });
                 }
             }
-            // length(ValueType) - exactly 1 argument, can be query or literal
+            // length(ValueType) - exactly 1 argument, must be singular query or literal
             "length" => {
                 if args.len() != 1 {
                     return Err(ParseError {
@@ -813,7 +872,14 @@ impl Parser {
                         position: pos,
                     });
                 }
-                // ValueType allows both queries and literals, so no type check needed
+                // RFC 9535: length() argument must be ValueType (singular query or literal)
+                if !Self::is_value_type(&args[0]) {
+                    return Err(ParseError {
+                        message: "function 'length' requires a singular query or literal argument"
+                            .to_string(),
+                        position: pos,
+                    });
+                }
             }
             // match(ValueType, ValueType) - exactly 2 arguments
             "match" => {
