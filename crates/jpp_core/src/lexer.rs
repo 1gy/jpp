@@ -330,6 +330,7 @@ impl<'a> Lexer<'a> {
         }
 
         // Integer part
+        let int_start = num_str.len();
         while let Some(&ch) = self.chars.peek() {
             if ch.is_ascii_digit() {
                 if let Some(digit) = self.advance() {
@@ -339,6 +340,18 @@ impl<'a> Lexer<'a> {
                 break;
             }
         }
+        let int_part = num_str[int_start..].to_string();
+
+        // RFC 9535: Reject leading zeros (e.g., "01", "007") but allow "0"
+        if int_part.len() > 1 && int_part.starts_with('0') {
+            return Err(LexerError {
+                message: "leading zeros not allowed".to_string(),
+                position: start_pos,
+            });
+        }
+
+        let is_negative = num_str.starts_with('-');
+        let mut has_fraction_or_exp = false;
 
         // Decimal part (optional)
         if self.chars.peek() == Some(&'.') {
@@ -346,6 +359,7 @@ impl<'a> Lexer<'a> {
             let mut chars_clone = self.chars.clone();
             chars_clone.next(); // consume the '.'
             if chars_clone.peek().is_some_and(|c| c.is_ascii_digit()) {
+                has_fraction_or_exp = true;
                 if let Some(dot) = self.advance() {
                     num_str.push(dot); // consume '.'
                 }
@@ -363,6 +377,7 @@ impl<'a> Lexer<'a> {
 
         // Exponent part (optional)
         if self.chars.peek().is_some_and(|&c| c == 'e' || c == 'E') {
+            has_fraction_or_exp = true;
             if let Some(e) = self.advance() {
                 num_str.push(e); // consume 'e' or 'E'
             }
@@ -396,6 +411,14 @@ impl<'a> Lexer<'a> {
         if num_str.is_empty() || num_str == "-" {
             return Err(LexerError {
                 message: "invalid number".to_string(),
+                position: start_pos,
+            });
+        }
+
+        // RFC 9535: Reject "-0" as integer (but allow -0.5, -0e1, etc.)
+        if is_negative && int_part == "0" && !has_fraction_or_exp {
+            return Err(LexerError {
+                message: "-0 is not allowed".to_string(),
                 position: start_pos,
             });
         }
