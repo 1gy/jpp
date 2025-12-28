@@ -8,6 +8,8 @@ use std::str::Chars;
 pub enum TokenKind {
     /// Root identifier `$`
     Root,
+    /// Current node `@`
+    At,
     /// Single dot `.`
     Dot,
     /// Double dot `..`
@@ -16,12 +18,42 @@ pub enum TokenKind {
     BracketOpen,
     /// Closing bracket `]`
     BracketClose,
+    /// Opening parenthesis `(`
+    ParenOpen,
+    /// Closing parenthesis `)`
+    ParenClose,
     /// Wildcard `*`
     Wildcard,
     /// Colon `:`
     Colon,
     /// Comma `,`
     Comma,
+    /// Question mark `?` (filter indicator)
+    Question,
+    /// Less than `<`
+    LessThan,
+    /// Greater than `>`
+    GreaterThan,
+    /// Less than or equal `<=`
+    LessEq,
+    /// Greater than or equal `>=`
+    GreaterEq,
+    /// Equal `==`
+    Equal,
+    /// Not equal `!=`
+    NotEqual,
+    /// Logical AND `&&`
+    And,
+    /// Logical OR `||`
+    Or,
+    /// Logical NOT `!`
+    Not,
+    /// Boolean true literal
+    True,
+    /// Boolean false literal
+    False,
+    /// Null literal
+    Null,
     /// Identifier (unquoted key name)
     Ident(String),
     /// String literal (single or double quoted)
@@ -89,6 +121,10 @@ impl<'a> Lexer<'a> {
                 self.advance();
                 TokenKind::Root
             }
+            '@' => {
+                self.advance();
+                TokenKind::At
+            }
             '.' => {
                 self.advance();
                 if self.chars.peek() == Some(&'.') {
@@ -106,6 +142,14 @@ impl<'a> Lexer<'a> {
                 self.advance();
                 TokenKind::BracketClose
             }
+            '(' => {
+                self.advance();
+                TokenKind::ParenOpen
+            }
+            ')' => {
+                self.advance();
+                TokenKind::ParenClose
+            }
             '*' => {
                 self.advance();
                 TokenKind::Wildcard
@@ -118,9 +162,76 @@ impl<'a> Lexer<'a> {
                 self.advance();
                 TokenKind::Comma
             }
+            '?' => {
+                self.advance();
+                TokenKind::Question
+            }
+            '<' => {
+                self.advance();
+                if self.chars.peek() == Some(&'=') {
+                    self.advance();
+                    TokenKind::LessEq
+                } else {
+                    TokenKind::LessThan
+                }
+            }
+            '>' => {
+                self.advance();
+                if self.chars.peek() == Some(&'=') {
+                    self.advance();
+                    TokenKind::GreaterEq
+                } else {
+                    TokenKind::GreaterThan
+                }
+            }
+            '=' => {
+                self.advance();
+                if self.chars.peek() == Some(&'=') {
+                    self.advance();
+                    TokenKind::Equal
+                } else {
+                    return Err(LexerError {
+                        message: "expected '==' but found single '='".to_string(),
+                        position: start_pos,
+                    });
+                }
+            }
+            '!' => {
+                self.advance();
+                if self.chars.peek() == Some(&'=') {
+                    self.advance();
+                    TokenKind::NotEqual
+                } else {
+                    TokenKind::Not
+                }
+            }
+            '&' => {
+                self.advance();
+                if self.chars.peek() == Some(&'&') {
+                    self.advance();
+                    TokenKind::And
+                } else {
+                    return Err(LexerError {
+                        message: "expected '&&' but found single '&'".to_string(),
+                        position: start_pos,
+                    });
+                }
+            }
+            '|' => {
+                self.advance();
+                if self.chars.peek() == Some(&'|') {
+                    self.advance();
+                    TokenKind::Or
+                } else {
+                    return Err(LexerError {
+                        message: "expected '||' but found single '|'".to_string(),
+                        position: start_pos,
+                    });
+                }
+            }
             '\'' | '"' => self.read_string()?,
             '-' | '0'..='9' => self.read_number()?,
-            _ if is_ident_start(ch) => self.read_ident(),
+            _ if is_ident_start(ch) => self.read_ident_or_keyword(),
             _ => {
                 return Err(LexerError {
                     message: format!("unexpected character: '{ch}'"),
@@ -233,7 +344,7 @@ impl<'a> Lexer<'a> {
         Ok(TokenKind::Number(value))
     }
 
-    fn read_ident(&mut self) -> TokenKind {
+    fn read_ident_or_keyword(&mut self) -> TokenKind {
         let mut ident = String::new();
 
         while let Some(&ch) = self.chars.peek() {
@@ -246,7 +357,13 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        TokenKind::Ident(ident)
+        // Check for keywords
+        match ident.as_str() {
+            "true" => TokenKind::True,
+            "false" => TokenKind::False,
+            "null" => TokenKind::Null,
+            _ => TokenKind::Ident(ident),
+        }
     }
 }
 
@@ -355,5 +472,155 @@ mod tests {
         assert_eq!(tokens[0].position, 0); // $
         assert_eq!(tokens[1].position, 1); // .
         assert_eq!(tokens[2].position, 2); // foo
+    }
+
+    #[test]
+    fn test_current_node() {
+        let tokens = Lexer::new("@.price").tokenize().unwrap();
+        assert_eq!(
+            kinds(&tokens),
+            vec![
+                &TokenKind::At,
+                &TokenKind::Dot,
+                &TokenKind::Ident("price".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn test_filter_indicator() {
+        let tokens = Lexer::new("$[?@.price]").tokenize().unwrap();
+        assert_eq!(
+            kinds(&tokens),
+            vec![
+                &TokenKind::Root,
+                &TokenKind::BracketOpen,
+                &TokenKind::Question,
+                &TokenKind::At,
+                &TokenKind::Dot,
+                &TokenKind::Ident("price".to_string()),
+                &TokenKind::BracketClose
+            ]
+        );
+    }
+
+    #[test]
+    fn test_comparison_operators() {
+        let tokens = Lexer::new("< > <= >= == !=").tokenize().unwrap();
+        assert_eq!(
+            kinds(&tokens),
+            vec![
+                &TokenKind::LessThan,
+                &TokenKind::GreaterThan,
+                &TokenKind::LessEq,
+                &TokenKind::GreaterEq,
+                &TokenKind::Equal,
+                &TokenKind::NotEqual
+            ]
+        );
+    }
+
+    #[test]
+    fn test_logical_operators() {
+        let tokens = Lexer::new("&& || !").tokenize().unwrap();
+        assert_eq!(
+            kinds(&tokens),
+            vec![&TokenKind::And, &TokenKind::Or, &TokenKind::Not]
+        );
+    }
+
+    #[test]
+    fn test_parentheses() {
+        let tokens = Lexer::new("(@.a && @.b)").tokenize().unwrap();
+        assert_eq!(
+            kinds(&tokens),
+            vec![
+                &TokenKind::ParenOpen,
+                &TokenKind::At,
+                &TokenKind::Dot,
+                &TokenKind::Ident("a".to_string()),
+                &TokenKind::And,
+                &TokenKind::At,
+                &TokenKind::Dot,
+                &TokenKind::Ident("b".to_string()),
+                &TokenKind::ParenClose
+            ]
+        );
+    }
+
+    #[test]
+    fn test_keywords() {
+        let tokens = Lexer::new("true false null").tokenize().unwrap();
+        assert_eq!(
+            kinds(&tokens),
+            vec![&TokenKind::True, &TokenKind::False, &TokenKind::Null]
+        );
+    }
+
+    #[test]
+    fn test_filter_expression() {
+        let tokens = Lexer::new("$[?@.price < 10]").tokenize().unwrap();
+        assert_eq!(
+            kinds(&tokens),
+            vec![
+                &TokenKind::Root,
+                &TokenKind::BracketOpen,
+                &TokenKind::Question,
+                &TokenKind::At,
+                &TokenKind::Dot,
+                &TokenKind::Ident("price".to_string()),
+                &TokenKind::LessThan,
+                &TokenKind::Number(10),
+                &TokenKind::BracketClose
+            ]
+        );
+    }
+
+    #[test]
+    fn test_complex_filter() {
+        let tokens = Lexer::new("$[?@.price >= 10 && @.available == true]")
+            .tokenize()
+            .unwrap();
+        assert_eq!(
+            kinds(&tokens),
+            vec![
+                &TokenKind::Root,
+                &TokenKind::BracketOpen,
+                &TokenKind::Question,
+                &TokenKind::At,
+                &TokenKind::Dot,
+                &TokenKind::Ident("price".to_string()),
+                &TokenKind::GreaterEq,
+                &TokenKind::Number(10),
+                &TokenKind::And,
+                &TokenKind::At,
+                &TokenKind::Dot,
+                &TokenKind::Ident("available".to_string()),
+                &TokenKind::Equal,
+                &TokenKind::True,
+                &TokenKind::BracketClose
+            ]
+        );
+    }
+
+    #[test]
+    fn test_invalid_single_ampersand() {
+        let result = Lexer::new("&").tokenize();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("expected '&&'"));
+    }
+
+    #[test]
+    fn test_invalid_single_pipe() {
+        let result = Lexer::new("|").tokenize();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("expected '||'"));
+    }
+
+    #[test]
+    fn test_invalid_single_equals() {
+        let result = Lexer::new("=").tokenize();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("expected '=='"));
     }
 }
