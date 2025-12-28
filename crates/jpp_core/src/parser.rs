@@ -601,15 +601,28 @@ impl Parser {
             }
             Some(TokenKind::BracketOpen) => {
                 self.advance(); // consume '['
-                let selector = self.parse_filter_bracket_selector()?;
-                if self.current_kind() != Some(&TokenKind::BracketClose) {
-                    return Err(ParseError {
-                        message: "expected ']'".to_string(),
-                        position: self.current_position(),
-                    });
+                let mut selectors = Vec::new();
+                loop {
+                    let selector = self.parse_filter_bracket_selector()?;
+                    selectors.push(selector);
+                    match self.current_kind() {
+                        Some(TokenKind::Comma) => {
+                            self.advance();
+                            continue;
+                        }
+                        Some(TokenKind::BracketClose) => {
+                            self.advance();
+                            break;
+                        }
+                        _ => {
+                            return Err(ParseError {
+                                message: "expected ',' or ']'".to_string(),
+                                position: self.current_position(),
+                            });
+                        }
+                    }
                 }
-                self.advance(); // consume ']'
-                Ok(Segment::Child(vec![selector]))
+                Ok(Segment::Child(selectors))
             }
             _ => Err(ParseError {
                 message: "expected path segment".to_string(),
