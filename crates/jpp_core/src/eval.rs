@@ -1165,4 +1165,53 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0]["name"], "a.c");
     }
+
+    // ========== Multiple Selector Tests ==========
+
+    #[test]
+    fn test_multiple_property_selectors() {
+        // $['a','b'] should select both properties
+        let json = json!({"a": 1, "b": 2, "c": 3});
+        let results = query("$['a','b']", &json);
+        assert_eq!(results.len(), 2);
+        assert!(results.contains(&json!(1)));
+        assert!(results.contains(&json!(2)));
+    }
+
+    #[test]
+    fn test_multiple_index_selectors() {
+        // $[0,2] should select elements at index 0 and 2
+        let json = json!(["a", "b", "c", "d"]);
+        let results = query("$[0,2]", &json);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0], json!("a"));
+        assert_eq!(results[1], json!("c"));
+    }
+
+    #[test]
+    fn test_multiple_selectors_in_filter_existence() {
+        // $[?@['a','b']] - match if any of the properties exist
+        let json = json!([
+            {"a": 1},
+            {"b": 2},
+            {"c": 3},
+            {"a": 1, "b": 2}
+        ]);
+        let results = query("$[?@['a','b']]", &json);
+        // Should match objects that have 'a' OR 'b'
+        assert_eq!(results.len(), 3);
+        assert_eq!(results[0], json!({"a": 1}));
+        assert_eq!(results[1], json!({"b": 2}));
+        assert_eq!(results[2], json!({"a": 1, "b": 2}));
+    }
+
+    #[test]
+    fn test_mixed_selectors() {
+        // $[0,'a'] - mix of index and property (only index applies to array)
+        let json = json!(["first", "second"]);
+        let results = query("$[0,'a']", &json);
+        // Only index 0 matches for array
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], json!("first"));
+    }
 }
