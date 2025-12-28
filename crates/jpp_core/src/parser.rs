@@ -639,6 +639,8 @@ impl Parser {
 
     /// Parse a function call: name(args...)
     fn parse_function_call(&mut self, name: String) -> Result<Expr, ParseError> {
+        let func_pos = self.current_position();
+
         // Consume '('
         if self.current_kind() != Some(&TokenKind::ParenOpen) {
             return Err(ParseError {
@@ -671,7 +673,104 @@ impl Parser {
         }
         self.advance();
 
+        // Validate function parameters per RFC 9535
+        self.validate_function_params(&name, &args, func_pos)?;
+
         Ok(Expr::FunctionCall { name, args })
+    }
+
+    /// Check if an expression is a query (NodesType) - @ or $ based path
+    fn is_nodes_type(expr: &Expr) -> bool {
+        matches!(expr, Expr::CurrentNode | Expr::RootNode | Expr::Path { .. })
+    }
+
+    /// Validate function parameter count and types per RFC 9535
+    fn validate_function_params(
+        &self,
+        name: &str,
+        args: &[Expr],
+        pos: usize,
+    ) -> Result<(), ParseError> {
+        match name {
+            // count(NodesType) - exactly 1 argument, must be a query (not literal)
+            "count" => {
+                if args.len() != 1 {
+                    return Err(ParseError {
+                        message: format!(
+                            "function 'count' requires exactly 1 argument, got {}",
+                            args.len()
+                        ),
+                        position: pos,
+                    });
+                }
+                if !Self::is_nodes_type(&args[0]) {
+                    return Err(ParseError {
+                        message: "function 'count' requires a query argument (NodesType)"
+                            .to_string(),
+                        position: pos,
+                    });
+                }
+            }
+            // length(ValueType) - exactly 1 argument, can be query or literal
+            "length" => {
+                if args.len() != 1 {
+                    return Err(ParseError {
+                        message: format!(
+                            "function 'length' requires exactly 1 argument, got {}",
+                            args.len()
+                        ),
+                        position: pos,
+                    });
+                }
+                // ValueType allows both queries and literals, so no type check needed
+            }
+            // match(ValueType, ValueType) - exactly 2 arguments
+            "match" => {
+                if args.len() != 2 {
+                    return Err(ParseError {
+                        message: format!(
+                            "function 'match' requires exactly 2 arguments, got {}",
+                            args.len()
+                        ),
+                        position: pos,
+                    });
+                }
+            }
+            // search(ValueType, ValueType) - exactly 2 arguments
+            "search" => {
+                if args.len() != 2 {
+                    return Err(ParseError {
+                        message: format!(
+                            "function 'search' requires exactly 2 arguments, got {}",
+                            args.len()
+                        ),
+                        position: pos,
+                    });
+                }
+            }
+            // value(NodesType) - exactly 1 argument, must be a query (not literal)
+            "value" => {
+                if args.len() != 1 {
+                    return Err(ParseError {
+                        message: format!(
+                            "function 'value' requires exactly 1 argument, got {}",
+                            args.len()
+                        ),
+                        position: pos,
+                    });
+                }
+                if !Self::is_nodes_type(&args[0]) {
+                    return Err(ParseError {
+                        message: "function 'value' requires a query argument (NodesType)"
+                            .to_string(),
+                        position: pos,
+                    });
+                }
+            }
+            // Unknown function - allow for now (may be extension)
+            _ => {}
+        }
+        Ok(())
     }
 }
 
