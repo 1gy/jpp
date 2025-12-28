@@ -1356,4 +1356,87 @@ mod tests {
             _ => panic!("expected Child segment"),
         }
     }
+
+    // ========== Function Type Validation Tests ==========
+
+    #[test]
+    fn test_comparison_type_function_in_existence_test() {
+        // RFC 9535: count/length/value return ComparisonType, cannot be used as existence test
+        let result = Parser::parse("$[?count(@.x)]");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("returns a value that must be compared")
+        );
+
+        let result = Parser::parse("$[?length(@.x)]");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("returns a value that must be compared")
+        );
+
+        let result = Parser::parse("$[?value(@.x)]");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("returns a value that must be compared")
+        );
+    }
+
+    #[test]
+    fn test_comparison_type_function_in_comparison_ok() {
+        // ComparisonType functions CAN be used in comparisons
+        assert!(Parser::parse("$[?count(@.x) > 0]").is_ok());
+        assert!(Parser::parse("$[?length(@.x) == 5]").is_ok());
+        assert!(Parser::parse("$[?value(@.x) != null]").is_ok());
+    }
+
+    #[test]
+    fn test_logical_type_function_in_comparison() {
+        // RFC 9535: match/search return LogicalType, cannot be compared
+        let result = Parser::parse("$[?match(@.x, \"a\") == true]");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("returns LogicalType and cannot be compared")
+        );
+
+        let result = Parser::parse("$[?search(@.x, \"a\") == true]");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("returns LogicalType and cannot be compared")
+        );
+    }
+
+    #[test]
+    fn test_logical_type_function_on_right_side() {
+        // LogicalType validation applies to right side too
+        let result = Parser::parse("$[?true == match(@.x, \"a\")]");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("returns LogicalType and cannot be compared")
+        );
+    }
+
+    #[test]
+    fn test_logical_type_function_in_existence_test_ok() {
+        // LogicalType functions CAN be used as existence tests
+        assert!(Parser::parse("$[?match(@.x, \"a\")]").is_ok());
+        assert!(Parser::parse("$[?search(@.x, \"a\")]").is_ok());
+    }
 }
