@@ -444,9 +444,10 @@ fn compare_values(left: &ExprResult, op: CompOp, right: &ExprResult) -> bool {
 
     match (left_val, right_val) {
         (Some(l), Some(r)) => compare_json_values(l, op, r),
-        // If either side is Nothing (missing), comparison always returns false
-        // This matches RFC 9535 behavior where missing values don't match anything
-        _ => false,
+        // Both sides are Nothing (absent) - equal in being absent
+        (None, None) => matches!(op, CompOp::Eq),
+        // One side is Nothing, one has a value - not equal
+        _ => matches!(op, CompOp::Ne),
     }
 }
 
@@ -842,9 +843,12 @@ mod tests {
                 {"name": "cherry"}
             ]
         });
+        // Per RFC 9535: Nothing != null is true (one side absent, one has value)
+        // So cherry (missing discount) also matches, in addition to banana
         let results = query("$.items[?@.discount != null]", &json);
-        assert_eq!(results.len(), 1);
+        assert_eq!(results.len(), 2);
         assert_eq!(results[0]["name"], "banana");
+        assert_eq!(results[1]["name"], "cherry");
     }
 
     #[test]
@@ -1020,11 +1024,12 @@ mod tests {
                 {"b": 2}
             ]
         });
-        // [?@.a != null] should only match {"a": 1}
-        // (missing 'a' returns Nothing, which doesn't match in comparisons)
+        // Per RFC 9535: Nothing != null is true (one side absent, one has value)
+        // So {"a": 1} matches (1 != null) and {"b": 2} matches (Nothing != null)
         let results = query("$.items[?@.a != null]", &json);
-        assert_eq!(results.len(), 1);
+        assert_eq!(results.len(), 2);
         assert_eq!(results[0], json!({"a": 1}));
+        assert_eq!(results[1], json!({"b": 2}));
     }
 
     // ========== Nested Filter Tests ==========
