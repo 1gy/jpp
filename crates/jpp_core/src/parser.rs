@@ -3,6 +3,9 @@
 use crate::ast::{CompOp, Expr, JsonPath, Literal, LogicalOp, Segment, Selector};
 use crate::lexer::{Lexer, LexerError, Token, TokenKind};
 
+/// RFC 9535: Functions that return LogicalType (cannot be used in comparisons)
+const LOGICAL_TYPE_FUNCTIONS: &[&str] = &["match", "search"];
+
 /// Parser error
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParseError {
@@ -427,6 +430,17 @@ impl Parser {
         }
     }
 
+    /// Check if an expression is a LogicalType function (match, search)
+    /// Returns the function name if it is, None otherwise
+    fn get_logical_type_function_name(expr: &Expr) -> Option<&str> {
+        if let Expr::FunctionCall { name, .. } = expr
+            && LOGICAL_TYPE_FUNCTIONS.contains(&name.as_str())
+        {
+            return Some(name.as_str());
+        }
+        None
+    }
+
     /// Parse comparison expression: expr op expr
     fn parse_comparison_expression(&mut self) -> Result<Expr, ParseError> {
         let left = self.parse_unary_expression()?;
@@ -461,27 +475,16 @@ impl Parser {
             }
 
             // RFC 9535: LogicalType functions (match, search) cannot be compared
-            if let Expr::FunctionCall { name, .. } = &left
-                && matches!(name.as_str(), "match" | "search")
-            {
-                return Err(ParseError {
-                    message: format!(
-                        "function '{}' returns LogicalType and cannot be compared",
-                        name
-                    ),
-                    position: op_pos,
-                });
-            }
-            if let Expr::FunctionCall { name, .. } = &right
-                && matches!(name.as_str(), "match" | "search")
-            {
-                return Err(ParseError {
-                    message: format!(
-                        "function '{}' returns LogicalType and cannot be compared",
-                        name
-                    ),
-                    position: op_pos,
-                });
+            for expr in [&left, &right] {
+                if let Some(name) = Self::get_logical_type_function_name(expr) {
+                    return Err(ParseError {
+                        message: format!(
+                            "function '{}' returns LogicalType and cannot be compared",
+                            name
+                        ),
+                        position: op_pos,
+                    });
+                }
             }
 
             Ok(Expr::Comparison {

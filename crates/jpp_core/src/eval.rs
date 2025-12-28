@@ -281,97 +281,9 @@ fn evaluate_path_segments<'a>(
 ) -> Vec<&'a Value> {
     let mut current = vec![start];
     for segment in segments {
-        current = evaluate_segment_for_expr(segment, &current, root);
+        current = evaluate_segment(segment, &current, root);
     }
     current
-}
-
-/// Evaluate a segment for expression path traversal
-fn evaluate_segment_for_expr<'a>(
-    segment: &Segment,
-    nodes: &[&'a Value],
-    root: &'a Value,
-) -> Vec<&'a Value> {
-    match segment {
-        Segment::Child(selectors) => {
-            let mut results = Vec::new();
-            for node in nodes {
-                for selector in selectors {
-                    results.extend(evaluate_selector_in_path(selector, node, root));
-                }
-            }
-            results
-        }
-        Segment::Descendant(selectors) => {
-            let mut results = Vec::new();
-            for node in nodes {
-                let descendants = collect_descendants(node);
-                for desc in &descendants {
-                    for selector in selectors {
-                        results.extend(evaluate_selector_in_path(selector, desc, root));
-                    }
-                }
-            }
-            results
-        }
-    }
-}
-
-/// Evaluate a selector within a path expression (supports nested filters)
-fn evaluate_selector_in_path<'a>(
-    selector: &Selector,
-    node: &'a Value,
-    root: &'a Value,
-) -> Vec<&'a Value> {
-    match selector {
-        Selector::Name(name) => {
-            if let Value::Object(map) = node {
-                map.get(name).into_iter().collect()
-            } else {
-                vec![]
-            }
-        }
-        Selector::Index(idx) => {
-            if let Value::Array(arr) = node {
-                let index = normalize_index(*idx, arr.len());
-                index.and_then(|i| arr.get(i)).into_iter().collect()
-            } else {
-                vec![]
-            }
-        }
-        Selector::Wildcard => match node {
-            Value::Array(arr) => arr.iter().collect(),
-            Value::Object(map) => map.values().collect(),
-            _ => vec![],
-        },
-        Selector::Slice { start, end, step } => {
-            if let Value::Array(arr) = node {
-                evaluate_slice(arr, *start, *end, *step)
-            } else {
-                vec![]
-            }
-        }
-        Selector::Filter(expr) => {
-            // Nested filter: evaluate the filter expression against node's children
-            match node {
-                Value::Array(arr) => arr
-                    .iter()
-                    .filter(|elem| {
-                        let result = evaluate_expr(expr, elem, root);
-                        result.is_truthy()
-                    })
-                    .collect(),
-                Value::Object(map) => map
-                    .values()
-                    .filter(|elem| {
-                        let result = evaluate_expr(expr, elem, root);
-                        result.is_truthy()
-                    })
-                    .collect(),
-                _ => vec![],
-            }
-        }
-    }
 }
 
 /// Convert a Literal to a JSON Value
@@ -449,36 +361,30 @@ fn fn_value(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
     }
 }
 
+/// Helper for regex matching with I-Regexp transformation
+/// `full_match`: true = match() (anchored), false = search() (unanchored)
+fn regex_string_match(string: &str, pattern: &str, full_match: bool) -> bool {
+    let transformed = transform_pattern_for_iregexp(pattern);
+    let final_pattern = if full_match {
+        format!("^(?:{})$", transformed)
+    } else {
+        transformed
+    };
+    get_or_compile_regex(&final_pattern).is_some_and(|re| re.is_match(string))
+}
+
 /// RFC 9535 match() function: returns true if string matches regex (full match)
 fn fn_match(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
-    if args.len() != 2 {
-        return ExprResult::Nothing;
-    }
-
-    let string_arg = evaluate_expr(&args[0], current, root);
-    let pattern_arg = evaluate_expr(&args[1], current, root);
-
-    let string = match string_arg.to_value() {
-        Some(Value::String(s)) => s.as_str(),
-        _ => return ExprResult::Value(Value::Bool(false)),
-    };
-
-    let pattern = match pattern_arg.to_value() {
-        Some(Value::String(p)) => p.as_str(),
-        _ => return ExprResult::Value(Value::Bool(false)),
-    };
-
-    // Transform pattern for I-Regexp compliance and create anchored regex for full match
-    let transformed = transform_pattern_for_iregexp(pattern);
-    let anchored_pattern = format!("^(?:{})$", transformed);
-    match get_or_compile_regex(&anchored_pattern) {
-        Some(re) => ExprResult::Value(Value::Bool(re.is_match(string))),
-        None => ExprResult::Value(Value::Bool(false)),
-    }
+    regex_function(args, current, root, true)
 }
 
 /// RFC 9535 search() function: returns true if regex pattern found anywhere in string
 fn fn_search(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
+    regex_function(args, current, root, false)
+}
+
+/// Common implementation for match() and search() functions
+fn regex_function(args: &[Expr], current: &Value, root: &Value, full_match: bool) -> ExprResult {
     if args.len() != 2 {
         return ExprResult::Nothing;
     }
@@ -496,12 +402,7 @@ fn fn_search(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
         _ => return ExprResult::Value(Value::Bool(false)),
     };
 
-    // Transform pattern for I-Regexp compliance
-    let transformed = transform_pattern_for_iregexp(pattern);
-    match get_or_compile_regex(&transformed) {
-        Some(re) => ExprResult::Value(Value::Bool(re.is_match(string))),
-        None => ExprResult::Value(Value::Bool(false)),
-    }
+    ExprResult::Value(Value::Bool(regex_string_match(string, pattern, full_match)))
 }
 
 /// Compare two expression results with the given operator
