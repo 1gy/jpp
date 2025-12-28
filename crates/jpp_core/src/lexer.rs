@@ -296,7 +296,16 @@ impl<'a> Lexer<'a> {
                         }
                     }
                 }
-                Some(ch) => value.push(ch),
+                Some(ch) => {
+                    // RFC 9535: Control characters (U+0000 to U+001F) must be escaped
+                    if (ch as u32) <= 0x1F {
+                        return Err(LexerError {
+                            message: format!("unescaped control character U+{:04X}", ch as u32),
+                            position: self.position - 1,
+                        });
+                    }
+                    value.push(ch)
+                }
                 None => {
                     return Err(LexerError {
                         message: "unterminated string".to_string(),
