@@ -38,6 +38,26 @@ impl Parser {
 
     /// Parse a JSONPath query string
     pub fn parse(input: &str) -> Result<JsonPath, ParseError> {
+        // RFC 9535: JSONPath must start with '$', no leading whitespace allowed
+        if let Some(first_char) = input.chars().next()
+            && first_char.is_whitespace()
+        {
+            return Err(ParseError {
+                message: "leading whitespace is not allowed".to_string(),
+                position: 0,
+            });
+        }
+
+        // RFC 9535: No trailing whitespace allowed
+        if let Some(last_char) = input.chars().last()
+            && last_char.is_whitespace()
+        {
+            return Err(ParseError {
+                message: "trailing whitespace is not allowed".to_string(),
+                position: input.len() - 1,
+            });
+        }
+
         let tokens = Lexer::new(input).tokenize()?;
         let mut parser = Self::new(tokens);
         parser.parse_jsonpath()
@@ -827,5 +847,47 @@ mod tests {
             },
             _ => panic!("expected Child segment"),
         }
+    }
+
+    // ========== Whitespace Validation Tests ==========
+
+    #[test]
+    fn test_reject_leading_whitespace() {
+        let result = Parser::parse(" $");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("leading whitespace"));
+        assert_eq!(err.position, 0);
+    }
+
+    #[test]
+    fn test_reject_trailing_whitespace() {
+        let result = Parser::parse("$ ");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("trailing whitespace"));
+    }
+
+    #[test]
+    fn test_reject_both_leading_and_trailing_whitespace() {
+        let result = Parser::parse(" $ ");
+        assert!(result.is_err());
+        // Leading whitespace is checked first
+        let err = result.unwrap_err();
+        assert!(err.message.contains("leading whitespace"));
+    }
+
+    #[test]
+    fn test_reject_tab_whitespace() {
+        let result = Parser::parse("\t$");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("leading whitespace"));
+    }
+
+    #[test]
+    fn test_reject_newline_whitespace() {
+        let result = Parser::parse("$\n");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().message.contains("trailing whitespace"));
     }
 }
