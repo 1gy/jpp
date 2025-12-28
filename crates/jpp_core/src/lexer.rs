@@ -307,8 +307,10 @@ impl<'a> Lexer<'a> {
                         't' => value.push('\t'),
                         'r' => value.push('\r'),
                         '\\' => value.push('\\'),
-                        '\'' => value.push('\''),
-                        '"' => value.push('"'),
+                        // RFC 9535: \' is only valid in single-quoted strings
+                        '\'' if quote == '\'' => value.push('\''),
+                        // RFC 9535: \" is only valid in double-quoted strings
+                        '"' if quote == '"' => value.push('"'),
                         'b' => value.push('\x08'),
                         'f' => value.push('\x0C'),
                         '/' => value.push('/'),
