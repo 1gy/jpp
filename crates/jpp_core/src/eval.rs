@@ -25,6 +25,16 @@ impl ExprResult {
         }
     }
 
+    /// Check if the result is singular (at most one value)
+    /// RFC 9535: comparisons require singular queries on both sides
+    fn is_singular(&self) -> bool {
+        match self {
+            ExprResult::Value(_) => true,
+            ExprResult::NodeList(list) => list.len() <= 1,
+            ExprResult::Nothing => true,
+        }
+    }
+
     /// Convert to a single value for comparison (takes first if NodeList)
     fn to_value(&self) -> Option<&Value> {
         match self {
@@ -416,8 +426,13 @@ fn fn_search(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
 }
 
 /// Compare two expression results with the given operator
-/// Per RFC 9535: comparisons involving missing values return false
+/// Per RFC 9535: comparisons require singular queries on both sides
 fn compare_values(left: &ExprResult, op: CompOp, right: &ExprResult) -> bool {
+    // RFC 9535: Non-singular queries in comparisons always return false
+    if !left.is_singular() || !right.is_singular() {
+        return false;
+    }
+
     let left_val = left.to_value();
     let right_val = right.to_value();
 
@@ -1003,5 +1018,63 @@ mod tests {
         // Select data items that have at least one valid item
         let results = query("$.data[?@.items[?@.valid == true]]", &json);
         assert_eq!(results.len(), 2);
+    }
+
+    // ========== Non-Singular Query Comparison Tests ==========
+
+    #[test]
+    fn test_non_singular_wildcard_comparison_rejected() {
+        // RFC 9535: @[*] returning multiple values is non-singular, comparison returns false
+        let json = json!([[1, 2, 3], [1, 1], [5, 6]]);
+        // $[?@[*] == 1] should not match arrays with multiple elements
+        // because @[*] returns multiple values, making it non-singular
+        let results = query("$[?@[*] == 1]", &json);
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_singular_single_element_array_works() {
+        // Single-element array with wildcard returns 1 value (singular at runtime)
+        let json = json!([[1], [2], [1]]);
+        // @[*] on single-element arrays returns 1 value, so comparison works
+        let results = query("$[?@[*] == 1]", &json);
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_singular_index_comparison_works() {
+        // @[0] is singular, comparison should work
+        let json = json!([[1, 2, 3], [5, 6], [1, 7]]);
+        // $[?@[0] == 1] should match arrays whose first element is 1
+        let results = query("$[?@[0] == 1]", &json);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0], json!([1, 2, 3]));
+        assert_eq!(results[1], json!([1, 7]));
+    }
+
+    #[test]
+    fn test_singular_property_comparison_works() {
+        // @.a is singular, comparison should work
+        let json = json!([
+            {"a": 1, "b": 2},
+            {"a": 5},
+            {"a": 1}
+        ]);
+        let results = query("$[?@.a == 1]", &json);
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_non_singular_on_right_side_rejected() {
+        // Non-singular on right side should also be rejected
+        let json = json!({
+            "items": [
+                {"val": 1, "arr": [1, 2]},
+                {"val": 2, "arr": [2, 3]}
+            ]
+        });
+        // Comparison with non-singular on right side
+        let results = query("$.items[?@.val == @.arr[*]]", &json);
+        assert_eq!(results.len(), 0);
     }
 }
