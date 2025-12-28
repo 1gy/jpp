@@ -149,7 +149,7 @@ fn evaluate_expr(expr: &Expr, current: &Value, root: &Value) -> ExprResult {
                 Expr::RootNode => root,
                 _ => return ExprResult::Nothing,
             };
-            let results = evaluate_path_segments(segments, start_value);
+            let results = evaluate_path_segments(segments, start_value, root);
             if results.is_empty() {
                 ExprResult::Nothing
             } else {
@@ -197,22 +197,30 @@ fn evaluate_expr(expr: &Expr, current: &Value, root: &Value) -> ExprResult {
 }
 
 /// Evaluate path segments starting from a value
-fn evaluate_path_segments<'a>(segments: &[Segment], start: &'a Value) -> Vec<&'a Value> {
+fn evaluate_path_segments<'a>(
+    segments: &[Segment],
+    start: &'a Value,
+    root: &'a Value,
+) -> Vec<&'a Value> {
     let mut current = vec![start];
     for segment in segments {
-        current = evaluate_segment_for_expr(segment, &current);
+        current = evaluate_segment_for_expr(segment, &current, root);
     }
     current
 }
 
-/// Evaluate a segment for expression path traversal (no root needed)
-fn evaluate_segment_for_expr<'a>(segment: &Segment, nodes: &[&'a Value]) -> Vec<&'a Value> {
+/// Evaluate a segment for expression path traversal
+fn evaluate_segment_for_expr<'a>(
+    segment: &Segment,
+    nodes: &[&'a Value],
+    root: &'a Value,
+) -> Vec<&'a Value> {
     match segment {
         Segment::Child(selectors) => {
             let mut results = Vec::new();
             for node in nodes {
                 for selector in selectors {
-                    results.extend(evaluate_selector_simple(selector, node));
+                    results.extend(evaluate_selector_in_path(selector, node, root));
                 }
             }
             results
@@ -223,7 +231,7 @@ fn evaluate_segment_for_expr<'a>(segment: &Segment, nodes: &[&'a Value]) -> Vec<
                 let descendants = collect_descendants(node);
                 for desc in &descendants {
                     for selector in selectors {
-                        results.extend(evaluate_selector_simple(selector, desc));
+                        results.extend(evaluate_selector_in_path(selector, desc, root));
                     }
                 }
             }
@@ -232,8 +240,12 @@ fn evaluate_segment_for_expr<'a>(segment: &Segment, nodes: &[&'a Value]) -> Vec<
     }
 }
 
-/// Simplified selector evaluation (no filters allowed in path expressions)
-fn evaluate_selector_simple<'a>(selector: &Selector, node: &'a Value) -> Vec<&'a Value> {
+/// Evaluate a selector within a path expression (supports nested filters)
+fn evaluate_selector_in_path<'a>(
+    selector: &Selector,
+    node: &'a Value,
+    root: &'a Value,
+) -> Vec<&'a Value> {
     match selector {
         Selector::Name(name) => {
             if let Value::Object(map) = node {
@@ -262,9 +274,25 @@ fn evaluate_selector_simple<'a>(selector: &Selector, node: &'a Value) -> Vec<&'a
                 vec![]
             }
         }
-        Selector::Filter(_) => {
-            // Nested filters in path expressions not supported in simple evaluation
-            vec![]
+        Selector::Filter(expr) => {
+            // Nested filter: evaluate the filter expression against node's children
+            match node {
+                Value::Array(arr) => arr
+                    .iter()
+                    .filter(|elem| {
+                        let result = evaluate_expr(expr, elem, root);
+                        result.is_truthy()
+                    })
+                    .collect(),
+                Value::Object(map) => map
+                    .values()
+                    .filter(|elem| {
+                        let result = evaluate_expr(expr, elem, root);
+                        result.is_truthy()
+                    })
+                    .collect(),
+                _ => vec![],
+            }
         }
     }
 }
@@ -931,5 +959,49 @@ mod tests {
         let results = query("$.items[?@.a != null]", &json);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0], json!({"a": 1}));
+    }
+
+    // ========== Nested Filter Tests ==========
+
+    #[test]
+    fn test_nested_filter_basic() {
+        // $[?@[?@.a]] - select elements that have children with property 'a'
+        let json = json!([
+            [{"a": 1}, {"b": 2}],
+            [{"b": 3}],
+            [{"a": 4}, {"a": 5}]
+        ]);
+        let results = query("$[?@[?@.a]]", &json);
+        // First and third arrays have children with property 'a'
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0], json!([{"a": 1}, {"b": 2}]));
+        assert_eq!(results[1], json!([{"a": 4}, {"a": 5}]));
+    }
+
+    #[test]
+    fn test_nested_filter_with_comparison() {
+        let json = json!([
+            [{"x": 1}, {"x": 10}],
+            [{"x": 5}],
+            [{"x": 20}, {"x": 30}]
+        ]);
+        // Select arrays that have at least one element with x > 15
+        let results = query("$[?@[?@.x > 15]]", &json);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], json!([{"x": 20}, {"x": 30}]));
+    }
+
+    #[test]
+    fn test_nested_filter_in_path() {
+        let json = json!({
+            "data": [
+                {"items": [{"valid": true}, {"valid": false}]},
+                {"items": [{"valid": false}]},
+                {"items": [{"valid": true}]}
+            ]
+        });
+        // Select data items that have at least one valid item
+        let results = query("$.data[?@.items[?@.valid == true]]", &json);
+        assert_eq!(results.len(), 2);
     }
 }

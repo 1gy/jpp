@@ -512,7 +512,7 @@ impl Parser {
         }
     }
 
-    /// Parse a bracket selector within filter path (name, index, wildcard, or slice)
+    /// Parse a bracket selector within filter path (name, index, wildcard, slice, or nested filter)
     fn parse_filter_bracket_selector(&mut self) -> Result<Selector, ParseError> {
         match self.current_kind().cloned() {
             Some(TokenKind::Wildcard) => {
@@ -524,6 +524,12 @@ impl Parser {
                 Ok(Selector::Name(s))
             }
             Some(TokenKind::Number(_)) | Some(TokenKind::Colon) => self.parse_index_or_slice(),
+            Some(TokenKind::Question) => {
+                // Nested filter expression: [?expr]
+                self.advance(); // consume '?'
+                let expr = self.parse_expression()?;
+                Ok(Selector::Filter(Box::new(expr)))
+            }
             Some(kind) => Err(ParseError {
                 message: format!("unexpected token in bracket selector: {kind:?}"),
                 position: self.current_position(),
@@ -961,6 +967,35 @@ mod tests {
                             segments[0],
                             Segment::Child(vec![Selector::Name("true".to_string())])
                         );
+                    }
+                    _ => panic!("expected Path expression"),
+                },
+                _ => panic!("expected Filter selector"),
+            },
+            _ => panic!("expected Child segment"),
+        }
+    }
+
+    // ========== Nested Filter Tests ==========
+
+    #[test]
+    fn test_parse_nested_filter() {
+        // $[?@[?@.a]] should parse successfully
+        let path = Parser::parse("$[?@[?@.a]]").unwrap();
+        assert_eq!(path.segments.len(), 1);
+        match &path.segments[0] {
+            Segment::Child(selectors) => match &selectors[0] {
+                Selector::Filter(outer_expr) => match outer_expr.as_ref() {
+                    Expr::Path { start, segments } => {
+                        assert_eq!(**start, Expr::CurrentNode);
+                        assert_eq!(segments.len(), 1);
+                        // The inner segment should contain a nested filter
+                        match &segments[0] {
+                            Segment::Child(inner_selectors) => {
+                                assert!(matches!(inner_selectors[0], Selector::Filter(_)));
+                            }
+                            _ => panic!("expected Child segment"),
+                        }
                     }
                     _ => panic!("expected Path expression"),
                 },
