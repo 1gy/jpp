@@ -218,6 +218,13 @@ impl Parser {
             Some(TokenKind::Question) => {
                 self.advance(); // consume '?'
                 let expr = self.parse_expression()?;
+                // RFC 9535: Literal alone is not allowed as filter expression
+                if matches!(expr, Expr::Literal(_)) {
+                    return Err(ParseError {
+                        message: "filter expression cannot be a literal alone".to_string(),
+                        position: self.current_position(),
+                    });
+                }
                 Ok(Selector::Filter(Box::new(expr)))
             }
             Some(kind) => Err(ParseError {
@@ -576,6 +583,13 @@ impl Parser {
                 // Nested filter expression: [?expr]
                 self.advance(); // consume '?'
                 let expr = self.parse_expression()?;
+                // RFC 9535: Literal alone is not allowed as filter expression
+                if matches!(expr, Expr::Literal(_)) {
+                    return Err(ParseError {
+                        message: "filter expression cannot be a literal alone".to_string(),
+                        position: self.current_position(),
+                    });
+                }
                 Ok(Selector::Filter(Box::new(expr)))
             }
             Some(kind) => Err(ParseError {
