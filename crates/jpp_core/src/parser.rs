@@ -86,12 +86,28 @@ impl Parser {
     fn parse_segment(&mut self) -> Result<Segment, ParseError> {
         match self.current_kind() {
             Some(TokenKind::DotDot) => {
+                let dot_pos = self.current_position();
                 self.advance();
+                // RFC 9535: No whitespace allowed after '..'
+                if self.current_position() != dot_pos + 2 {
+                    return Err(ParseError {
+                        message: "whitespace not allowed after '..'".to_string(),
+                        position: dot_pos + 2,
+                    });
+                }
                 let selectors = self.parse_selectors_after_dot()?;
                 Ok(Segment::Descendant(selectors))
             }
             Some(TokenKind::Dot) => {
+                let dot_pos = self.current_position();
                 self.advance();
+                // RFC 9535: No whitespace allowed after '.'
+                if self.current_position() != dot_pos + 1 {
+                    return Err(ParseError {
+                        message: "whitespace not allowed after '.'".to_string(),
+                        position: dot_pos + 1,
+                    });
+                }
                 let selectors = self.parse_selectors_after_dot()?;
                 Ok(Segment::Child(selectors))
             }
@@ -391,9 +407,19 @@ impl Parser {
                 Ok(Expr::Literal(Literal::String(s)))
             }
             Some(TokenKind::Ident(name)) => {
+                let ident_pos = self.current_position();
+                let ident_len = name.len();
                 self.advance();
                 // Check if this is a function call
                 if self.current_kind() == Some(&TokenKind::ParenOpen) {
+                    // RFC 9535: No whitespace allowed between function name and '('
+                    if self.current_position() != ident_pos + ident_len {
+                        return Err(ParseError {
+                            message: "whitespace not allowed between function name and '('"
+                                .to_string(),
+                            position: ident_pos + ident_len,
+                        });
+                    }
                     self.parse_function_call(name)
                 } else {
                     Err(ParseError {
@@ -455,12 +481,28 @@ impl Parser {
     fn parse_filter_path_segment(&mut self) -> Result<Segment, ParseError> {
         match self.current_kind() {
             Some(TokenKind::DotDot) => {
+                let dot_pos = self.current_position();
                 self.advance();
+                // RFC 9535: No whitespace allowed after '..'
+                if self.current_position() != dot_pos + 2 {
+                    return Err(ParseError {
+                        message: "whitespace not allowed after '..'".to_string(),
+                        position: dot_pos + 2,
+                    });
+                }
                 let selectors = self.parse_filter_selectors_after_dot()?;
                 Ok(Segment::Descendant(selectors))
             }
             Some(TokenKind::Dot) => {
+                let dot_pos = self.current_position();
                 self.advance();
+                // RFC 9535: No whitespace allowed after '.'
+                if self.current_position() != dot_pos + 1 {
+                    return Err(ParseError {
+                        message: "whitespace not allowed after '.'".to_string(),
+                        position: dot_pos + 1,
+                    });
+                }
                 let selectors = self.parse_filter_selectors_after_dot()?;
                 Ok(Segment::Child(selectors))
             }
