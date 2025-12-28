@@ -116,6 +116,19 @@ impl Parser {
                 self.advance();
                 Ok(vec![Selector::Name(name)])
             }
+            // RFC 9535: Keywords are valid as property names in dot notation
+            Some(TokenKind::True) => {
+                self.advance();
+                Ok(vec![Selector::Name("true".to_string())])
+            }
+            Some(TokenKind::False) => {
+                self.advance();
+                Ok(vec![Selector::Name("false".to_string())])
+            }
+            Some(TokenKind::Null) => {
+                self.advance();
+                Ok(vec![Selector::Name("null".to_string())])
+            }
             Some(TokenKind::Wildcard) => {
                 self.advance();
                 Ok(vec![Selector::Wildcard])
@@ -470,6 +483,19 @@ impl Parser {
             Some(TokenKind::Ident(name)) => {
                 self.advance();
                 Ok(vec![Selector::Name(name)])
+            }
+            // RFC 9535: Keywords are valid as property names in dot notation
+            Some(TokenKind::True) => {
+                self.advance();
+                Ok(vec![Selector::Name("true".to_string())])
+            }
+            Some(TokenKind::False) => {
+                self.advance();
+                Ok(vec![Selector::Name("false".to_string())])
+            }
+            Some(TokenKind::Null) => {
+                self.advance();
+                Ok(vec![Selector::Name("null".to_string())])
             }
             Some(TokenKind::Wildcard) => {
                 self.advance();
@@ -889,5 +915,58 @@ mod tests {
         let result = Parser::parse("$\n");
         assert!(result.is_err());
         assert!(result.unwrap_err().message.contains("trailing whitespace"));
+    }
+
+    // ========== Keyword as Property Name Tests ==========
+
+    #[test]
+    fn test_keyword_true_as_property() {
+        let path = Parser::parse("$.true").unwrap();
+        assert_eq!(path.segments.len(), 1);
+        assert_eq!(
+            path.segments[0],
+            Segment::Child(vec![Selector::Name("true".to_string())])
+        );
+    }
+
+    #[test]
+    fn test_keyword_false_as_property() {
+        let path = Parser::parse("$.false").unwrap();
+        assert_eq!(path.segments.len(), 1);
+        assert_eq!(
+            path.segments[0],
+            Segment::Child(vec![Selector::Name("false".to_string())])
+        );
+    }
+
+    #[test]
+    fn test_keyword_null_as_property() {
+        let path = Parser::parse("$.null").unwrap();
+        assert_eq!(path.segments.len(), 1);
+        assert_eq!(
+            path.segments[0],
+            Segment::Child(vec![Selector::Name("null".to_string())])
+        );
+    }
+
+    #[test]
+    fn test_keyword_in_filter_path() {
+        // $.items[?@.null] should parse @.null as a path to property "null"
+        let path = Parser::parse("$[?@.true]").unwrap();
+        match &path.segments[0] {
+            Segment::Child(selectors) => match &selectors[0] {
+                Selector::Filter(expr) => match expr.as_ref() {
+                    Expr::Path { segments, .. } => {
+                        assert_eq!(
+                            segments[0],
+                            Segment::Child(vec![Selector::Name("true".to_string())])
+                        );
+                    }
+                    _ => panic!("expected Path expression"),
+                },
+                _ => panic!("expected Filter selector"),
+            },
+            _ => panic!("expected Child segment"),
+        }
     }
 }
