@@ -132,17 +132,11 @@ fn run_cts_tests() {
         }
     }
 
-    // For now, we don't fail the test - just report results
-    // Once we achieve high compliance, we can enable this assertion
-    // assert_eq!(failed, 0, "CTS tests failed");
-
-    // But we do want to ensure we pass at least some tests
-    assert!(passed > 0, "No CTS tests passed - something is wrong");
-
-    // Print pass rate for CI visibility
-    println!(
-        "\nCTS compliance: {:.1}%",
-        (passed as f64 / total as f64) * 100.0
+    // Enforce 100% CTS compliance - fail if any tests fail
+    assert_eq!(
+        failed, 0,
+        "CTS tests failed: {} out of {} tests failed. RFC 9535 compliance must be maintained at 100%.",
+        failed, total
     );
 }
 
