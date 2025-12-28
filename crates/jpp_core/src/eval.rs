@@ -3,24 +3,50 @@
 use crate::ast::{CompOp, Expr, JsonPath, Literal, LogicalOp, Segment, Selector};
 use regex::Regex;
 use serde_json::Value;
+use std::cell::RefCell;
+use std::collections::HashMap;
+
+// Thread-local cache for compiled regex patterns.
+// Regex compilation is expensive (~10μs+), but the compiled Regex is cheap to clone (Arc-based).
+// This cache dramatically improves performance for queries like $[?match(@.name, "pattern")]
+// executed against large arrays - pattern is compiled once instead of per element.
+thread_local! {
+    static REGEX_CACHE: RefCell<HashMap<String, Regex>> = RefCell::new(HashMap::new());
+}
+
+/// Get a cached regex or compile and cache a new one.
+/// Returns None if the pattern is invalid.
+fn get_or_compile_regex(pattern: &str) -> Option<Regex> {
+    REGEX_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some(re) = cache.get(pattern) {
+            return Some(re.clone());
+        }
+        match Regex::new(pattern) {
+            Ok(re) => {
+                cache.insert(pattern.to_string(), re.clone());
+                Some(re)
+            }
+            Err(_) => None,
+        }
+    })
+}
 
 /// Transform regex pattern for I-Regexp compliance (RFC 9535).
 /// Per RFC 9535, `.` should NOT match \r (U+000D) in addition to \n which Rust already excludes.
 /// Note: Unlike ECMAScript, I-Regexp's `.` DOES match \u2028 and \u2029.
 fn transform_pattern_for_iregexp(pattern: &str) -> String {
     let mut result = String::with_capacity(pattern.len() * 2);
-    let chars: Vec<char> = pattern.chars().collect();
-    let mut i = 0;
+    let mut chars = pattern.chars();
     let mut in_char_class = false;
 
-    while i < chars.len() {
-        let c = chars[i];
-
-        if c == '\\' && i + 1 < chars.len() {
+    while let Some(c) = chars.next() {
+        if c == '\\' {
             // Escaped character - pass through as-is
             result.push(c);
-            result.push(chars[i + 1]);
-            i += 2;
+            if let Some(next) = chars.next() {
+                result.push(next);
+            }
             continue;
         }
 
@@ -37,8 +63,6 @@ fn transform_pattern_for_iregexp(pattern: &str) -> String {
         } else {
             result.push(c);
         }
-
-        i += 1;
     }
 
     result
@@ -435,21 +459,21 @@ fn fn_match(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
     let pattern_arg = evaluate_expr(&args[1], current, root);
 
     let string = match string_arg.to_value() {
-        Some(Value::String(s)) => s.clone(),
+        Some(Value::String(s)) => s.as_str(),
         _ => return ExprResult::Value(Value::Bool(false)),
     };
 
     let pattern = match pattern_arg.to_value() {
-        Some(Value::String(p)) => p.clone(),
+        Some(Value::String(p)) => p.as_str(),
         _ => return ExprResult::Value(Value::Bool(false)),
     };
 
     // Transform pattern for I-Regexp compliance and create anchored regex for full match
-    let transformed = transform_pattern_for_iregexp(&pattern);
+    let transformed = transform_pattern_for_iregexp(pattern);
     let anchored_pattern = format!("^(?:{})$", transformed);
-    match Regex::new(&anchored_pattern) {
-        Ok(re) => ExprResult::Value(Value::Bool(re.is_match(&string))),
-        Err(_) => ExprResult::Value(Value::Bool(false)),
+    match get_or_compile_regex(&anchored_pattern) {
+        Some(re) => ExprResult::Value(Value::Bool(re.is_match(string))),
+        None => ExprResult::Value(Value::Bool(false)),
     }
 }
 
@@ -463,20 +487,20 @@ fn fn_search(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
     let pattern_arg = evaluate_expr(&args[1], current, root);
 
     let string = match string_arg.to_value() {
-        Some(Value::String(s)) => s.clone(),
+        Some(Value::String(s)) => s.as_str(),
         _ => return ExprResult::Value(Value::Bool(false)),
     };
 
     let pattern = match pattern_arg.to_value() {
-        Some(Value::String(p)) => p.clone(),
+        Some(Value::String(p)) => p.as_str(),
         _ => return ExprResult::Value(Value::Bool(false)),
     };
 
     // Transform pattern for I-Regexp compliance
-    let transformed = transform_pattern_for_iregexp(&pattern);
-    match Regex::new(&transformed) {
-        Ok(re) => ExprResult::Value(Value::Bool(re.is_match(&string))),
-        Err(_) => ExprResult::Value(Value::Bool(false)),
+    let transformed = transform_pattern_for_iregexp(pattern);
+    match get_or_compile_regex(&transformed) {
+        Some(re) => ExprResult::Value(Value::Bool(re.is_match(string))),
+        None => ExprResult::Value(Value::Bool(false)),
     }
 }
 

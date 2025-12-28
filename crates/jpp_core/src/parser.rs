@@ -829,7 +829,9 @@ impl Parser {
                 })
             }
             // FunctionCalls that return ValueType are allowed
-            Expr::FunctionCall { name, .. } => matches!(name.as_str(), "length" | "count" | "value"),
+            Expr::FunctionCall { name, .. } => {
+                matches!(name.as_str(), "length" | "count" | "value")
+            }
             _ => false,
         }
     }
