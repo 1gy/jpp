@@ -530,7 +530,10 @@ fn evaluate_slice(
         let start = start
             .map(|s| normalize_slice_bound(s, len))
             .unwrap_or(len - 1);
-        let end = end.map(|e| normalize_slice_bound(e, len)).unwrap_or(-1);
+        // For negative step, end bound should clamp to -1 (not 0) to include index 0
+        let end = end
+            .map(|e| normalize_slice_bound_for_negative_step(e, len))
+            .unwrap_or(-1);
         (start.min(len - 1), end.max(-1))
     };
 
@@ -562,6 +565,17 @@ fn normalize_slice_bound(bound: i64, len: i64) -> i64 {
         bound
     } else {
         (len + bound).max(0)
+    }
+}
+
+/// Normalize slice bound for negative step end bound.
+/// Per RFC 9535, excessively negative end bounds should clamp to -1 (not 0)
+/// to allow inclusion of index 0 when iterating backwards.
+fn normalize_slice_bound_for_negative_step(bound: i64, len: i64) -> i64 {
+    if bound >= 0 {
+        bound
+    } else {
+        (len + bound).max(-1)
     }
 }
 
