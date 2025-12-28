@@ -1116,4 +1116,53 @@ mod tests {
                 .contains("non-singular query not allowed")
         );
     }
+
+    // ========== I-Regexp Compliance Tests ==========
+
+    #[test]
+    fn test_iregexp_dot_matches_normal_chars() {
+        // RFC 9535: . should match normal characters
+        let json = json!({"items": [{"name": "abc"}, {"name": "a1c"}, {"name": "aXc"}]});
+        let results = query("$.items[?match(@.name, \"a.c\")]", &json);
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_iregexp_dot_excludes_carriage_return() {
+        // RFC 9535 I-Regexp: . must NOT match \r (U+000D)
+        let json = json!({"items": [{"name": "a\rc"}, {"name": "abc"}]});
+        let results = query("$.items[?match(@.name, \"a.c\")]", &json);
+        // Only "abc" should match, not "a\rc"
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["name"], "abc");
+    }
+
+    #[test]
+    fn test_iregexp_dot_excludes_newline() {
+        // . should also not match \n (standard regex behavior)
+        let json = json!({"items": [{"name": "a\nc"}, {"name": "abc"}]});
+        let results = query("$.items[?match(@.name, \"a.c\")]", &json);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["name"], "abc");
+    }
+
+    #[test]
+    fn test_iregexp_transform_preserves_escaped_dot() {
+        // \. should remain as literal dot, not transformed
+        let json = json!({"items": [{"name": "a.c"}, {"name": "abc"}]});
+        let results = query("$.items[?match(@.name, \"a\\\\.c\")]", &json);
+        // Only "a.c" should match (literal dot)
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["name"], "a.c");
+    }
+
+    #[test]
+    fn test_iregexp_dot_in_char_class_unchanged() {
+        // . inside character class [.] should not be transformed
+        let json = json!({"items": [{"name": "a.c"}, {"name": "abc"}]});
+        let results = query("$.items[?match(@.name, \"a[.]c\")]", &json);
+        // Only "a.c" should match (literal dot in char class)
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["name"], "a.c");
+    }
 }
