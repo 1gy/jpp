@@ -958,8 +958,13 @@ impl Parser {
                     });
                 }
             }
-            // Unknown function - allow for now (may be extension)
-            _ => {}
+            // RFC 9535: Only the 5 defined functions are allowed
+            _ => {
+                return Err(ParseError {
+                    message: format!("unknown function '{}'", name),
+                    position: pos,
+                });
+            }
         }
         Ok(())
     }
@@ -1511,5 +1516,43 @@ mod tests {
         assert!(Parser::parse("$[?match(@.x, \"a\")]").is_ok());
         assert!(Parser::parse("$[?search(@.name, \"pattern\")]").is_ok());
         assert!(Parser::parse("$[?match(\"test\", \"t.*\")]").is_ok());
+    }
+
+    #[test]
+    fn test_unknown_function_rejected() {
+        // RFC 9535: Only count, length, match, search, value are defined
+        let result = Parser::parse("$[?first(@.x)]");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("unknown function 'first'")
+        );
+
+        let result = Parser::parse("$[?last(@.x)]");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("unknown function 'last'")
+        );
+
+        let result = Parser::parse("$[?min(@.x)]");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .message
+                .contains("unknown function 'min'")
+        );
+
+        // Known functions should still work
+        assert!(Parser::parse("$[?count(@.x) > 0]").is_ok());
+        assert!(Parser::parse("$[?length(@.x) > 0]").is_ok());
+        assert!(Parser::parse("$[?match(@.x, \"a\")]").is_ok());
+        assert!(Parser::parse("$[?search(@.x, \"a\")]").is_ok());
+        assert!(Parser::parse("$[?value(@.x) == 1]").is_ok());
     }
 }
