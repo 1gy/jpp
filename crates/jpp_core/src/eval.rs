@@ -152,9 +152,11 @@ fn evaluate_expr(expr: &Expr, current: &Value, root: &Value) -> ExprResult {
             let results = evaluate_path_segments(segments, start_value);
             if results.is_empty() {
                 ExprResult::Nothing
-            } else if results.len() == 1 {
-                ExprResult::Value(results[0].clone())
             } else {
+                // RFC 9535: Always return NodeList for paths.
+                // For existence tests, truthiness is based on whether any nodes exist,
+                // not on the value itself. This ensures [?@.a] matches {"a": null}
+                // because the path selects a node (even if its value is null).
                 ExprResult::NodeList(results.into_iter().cloned().collect())
             }
         }
@@ -718,17 +720,23 @@ mod tests {
 
     #[test]
     fn test_filter_not() {
+        // RFC 9535: [?!@.archived] matches items where 'archived' does NOT exist
+        // (negates existence test, not the value)
         let json = json!({
             "items": [
                 {"name": "apple", "archived": false},
                 {"name": "banana", "archived": true},
-                {"name": "cherry", "archived": false}
+                {"name": "cherry"}
             ]
         });
         let results = query("$.items[?!@.archived]", &json);
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0]["name"], "apple");
-        assert_eq!(results[1]["name"], "cherry");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["name"], "cherry");
+
+        // To filter by value being false, use comparison:
+        let results_false = query("$.items[?@.archived == false]", &json);
+        assert_eq!(results_false.len(), 1);
+        assert_eq!(results_false[0]["name"], "apple");
     }
 
     #[test]
@@ -873,5 +881,55 @@ mod tests {
         // search() finds substring
         let search_results = query("$.items[?search(@.name, \"test\")]", &json);
         assert_eq!(search_results.len(), 3);
+    }
+
+    // ========== Null Existence Semantics Tests ==========
+
+    #[test]
+    fn test_existence_with_null_value() {
+        // RFC 9535: [?@.a] should match if 'a' exists, even if its value is null
+        let json = json!({
+            "items": [
+                {"a": null},
+                {"a": 1},
+                {"b": 2}
+            ]
+        });
+        let results = query("$.items[?@.a]", &json);
+        // Both {"a": null} and {"a": 1} should match (a exists in both)
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0], json!({"a": null}));
+        assert_eq!(results[1], json!({"a": 1}));
+    }
+
+    #[test]
+    fn test_null_comparison_equal() {
+        let json = json!({
+            "items": [
+                {"a": null},
+                {"a": 1},
+                {"b": 2}
+            ]
+        });
+        // [?@.a == null] should only match {"a": null}
+        let results = query("$.items[?@.a == null]", &json);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], json!({"a": null}));
+    }
+
+    #[test]
+    fn test_null_comparison_not_equal() {
+        let json = json!({
+            "items": [
+                {"a": null},
+                {"a": 1},
+                {"b": 2}
+            ]
+        });
+        // [?@.a != null] should only match {"a": 1}
+        // (missing 'a' returns Nothing, which doesn't match in comparisons)
+        let results = query("$.items[?@.a != null]", &json);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0], json!({"a": 1}));
     }
 }
