@@ -68,48 +68,56 @@ fn transform_pattern_for_iregexp(pattern: &str) -> String {
     result
 }
 
-/// Result of evaluating an expression
-#[derive(Debug, Clone)]
-enum ExprResult {
-    /// A single JSON value
-    Value(Value),
-    /// Multiple values from a path query
-    NodeList(Vec<Value>),
+/// Result of evaluating an expression (uses references to avoid cloning)
+#[derive(Debug)]
+enum ExprResult<'a> {
+    /// A reference to an existing JSON value
+    Value(&'a Value),
+    /// An owned JSON value (for literals, computed booleans)
+    OwnedValue(Value),
+    /// Multiple values from a path query (references)
+    NodeList(Vec<&'a Value>),
     /// No result (missing property, failed comparison, etc.)
     Nothing,
 }
 
-impl ExprResult {
+impl<'a> ExprResult<'a> {
     /// Check if the result is truthy per RFC 9535 rules
+    #[inline]
     fn is_truthy(&self) -> bool {
         match self {
             ExprResult::NodeList(list) => !list.is_empty(),
             ExprResult::Value(v) => value_is_truthy(v),
+            ExprResult::OwnedValue(v) => value_is_truthy(v),
             ExprResult::Nothing => false,
         }
     }
 
     /// Check if the result is singular (at most one value)
     /// RFC 9535: comparisons require singular queries on both sides
+    #[inline]
     fn is_singular(&self) -> bool {
         match self {
-            ExprResult::Value(_) => true,
+            ExprResult::Value(_) | ExprResult::OwnedValue(_) => true,
             ExprResult::NodeList(list) => list.len() <= 1,
             ExprResult::Nothing => true,
         }
     }
 
     /// Convert to a single value for comparison (takes first if NodeList)
+    #[inline]
     fn to_value(&self) -> Option<&Value> {
         match self {
             ExprResult::Value(v) => Some(v),
-            ExprResult::NodeList(list) => list.first(),
+            ExprResult::OwnedValue(v) => Some(v),
+            ExprResult::NodeList(list) => list.first().copied(),
             ExprResult::Nothing => None,
         }
     }
 }
 
 /// Check if a JSON value is truthy
+#[inline]
 fn value_is_truthy(v: &Value) -> bool {
     match v {
         Value::Null => false,
@@ -213,13 +221,14 @@ fn evaluate_filter<'a>(expr: &Expr, node: &'a Value, root: &'a Value) -> Vec<&'a
 }
 
 /// Evaluate an expression in filter context
-fn evaluate_expr(expr: &Expr, current: &Value, root: &Value) -> ExprResult {
+#[inline]
+fn evaluate_expr<'a>(expr: &Expr, current: &'a Value, root: &'a Value) -> ExprResult<'a> {
     match expr {
         // RFC 9535: Bare @ in filter expression is an existence test.
         // Return as NodeList so is_truthy() checks existence, not value truthiness.
         // This ensures $[?@] includes null values (they exist, even if not truthy).
-        Expr::CurrentNode => ExprResult::NodeList(vec![current.clone()]),
-        Expr::RootNode => ExprResult::Value(root.clone()),
+        Expr::CurrentNode => ExprResult::NodeList(vec![current]),
+        Expr::RootNode => ExprResult::Value(root),
         Expr::Path { start, segments } => {
             let start_value = match start.as_ref() {
                 Expr::CurrentNode => current,
@@ -234,40 +243,40 @@ fn evaluate_expr(expr: &Expr, current: &Value, root: &Value) -> ExprResult {
                 // For existence tests, truthiness is based on whether any nodes exist,
                 // not on the value itself. This ensures [?@.a] matches {"a": null}
                 // because the path selects a node (even if its value is null).
-                ExprResult::NodeList(results.into_iter().cloned().collect())
+                ExprResult::NodeList(results)
             }
         }
-        Expr::Literal(lit) => ExprResult::Value(literal_to_value(lit)),
+        Expr::Literal(lit) => ExprResult::OwnedValue(literal_to_value(lit)),
         Expr::Comparison { left, op, right } => {
             let left_result = evaluate_expr(left, current, root);
             let right_result = evaluate_expr(right, current, root);
             let result = compare_values(&left_result, *op, &right_result);
-            ExprResult::Value(Value::Bool(result))
+            ExprResult::OwnedValue(Value::Bool(result))
         }
         Expr::Logical { left, op, right } => {
             let left_result = evaluate_expr(left, current, root);
             match op {
                 LogicalOp::And => {
                     if !left_result.is_truthy() {
-                        ExprResult::Value(Value::Bool(false))
+                        ExprResult::OwnedValue(Value::Bool(false))
                     } else {
                         let right_result = evaluate_expr(right, current, root);
-                        ExprResult::Value(Value::Bool(right_result.is_truthy()))
+                        ExprResult::OwnedValue(Value::Bool(right_result.is_truthy()))
                     }
                 }
                 LogicalOp::Or => {
                     if left_result.is_truthy() {
-                        ExprResult::Value(Value::Bool(true))
+                        ExprResult::OwnedValue(Value::Bool(true))
                     } else {
                         let right_result = evaluate_expr(right, current, root);
-                        ExprResult::Value(Value::Bool(right_result.is_truthy()))
+                        ExprResult::OwnedValue(Value::Bool(right_result.is_truthy()))
                     }
                 }
             }
         }
         Expr::Not(inner) => {
             let inner_result = evaluate_expr(inner, current, root);
-            ExprResult::Value(Value::Bool(!inner_result.is_truthy()))
+            ExprResult::OwnedValue(Value::Bool(!inner_result.is_truthy()))
         }
         Expr::FunctionCall { name, args } => evaluate_function(name, args, current, root),
     }
@@ -303,7 +312,13 @@ fn literal_to_value(lit: &Literal) -> Value {
 }
 
 /// Evaluate a built-in function call
-fn evaluate_function(name: &str, args: &[Expr], current: &Value, root: &Value) -> ExprResult {
+#[inline]
+fn evaluate_function<'a>(
+    name: &str,
+    args: &[Expr],
+    current: &'a Value,
+    root: &'a Value,
+) -> ExprResult<'a> {
     match name {
         "length" => fn_length(args, current, root),
         "count" => fn_count(args, current, root),
@@ -315,7 +330,7 @@ fn evaluate_function(name: &str, args: &[Expr], current: &Value, root: &Value) -
 }
 
 /// RFC 9535 length() function: returns length of string, array, or object
-fn fn_length(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
+fn fn_length<'a>(args: &[Expr], current: &'a Value, root: &'a Value) -> ExprResult<'a> {
     if args.len() != 1 {
         return ExprResult::Nothing;
     }
@@ -324,16 +339,16 @@ fn fn_length(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
     match arg.to_value() {
         Some(Value::String(s)) => {
             // Count Unicode code points, not bytes (RFC 9535 requires character count)
-            ExprResult::Value(Value::Number(s.chars().count().into()))
+            ExprResult::OwnedValue(Value::Number(s.chars().count().into()))
         }
-        Some(Value::Array(arr)) => ExprResult::Value(Value::Number(arr.len().into())),
-        Some(Value::Object(obj)) => ExprResult::Value(Value::Number(obj.len().into())),
+        Some(Value::Array(arr)) => ExprResult::OwnedValue(Value::Number(arr.len().into())),
+        Some(Value::Object(obj)) => ExprResult::OwnedValue(Value::Number(obj.len().into())),
         _ => ExprResult::Nothing,
     }
 }
 
 /// RFC 9535 count() function: returns count of nodes in a nodelist
-fn fn_count(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
+fn fn_count<'a>(args: &[Expr], current: &'a Value, root: &'a Value) -> ExprResult<'a> {
     if args.len() != 1 {
         return ExprResult::Nothing;
     }
@@ -341,14 +356,14 @@ fn fn_count(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
     let arg = evaluate_expr(&args[0], current, root);
     let count = match &arg {
         ExprResult::NodeList(list) => list.len(),
-        ExprResult::Value(_) => 1,
+        ExprResult::Value(_) | ExprResult::OwnedValue(_) => 1,
         ExprResult::Nothing => 0,
     };
-    ExprResult::Value(Value::Number(count.into()))
+    ExprResult::OwnedValue(Value::Number(count.into()))
 }
 
 /// RFC 9535 value() function: returns the value if exactly one node, Nothing otherwise
-fn fn_value(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
+fn fn_value<'a>(args: &[Expr], current: &'a Value, root: &'a Value) -> ExprResult<'a> {
     if args.len() != 1 {
         return ExprResult::Nothing;
     }
@@ -356,7 +371,8 @@ fn fn_value(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
     let arg = evaluate_expr(&args[0], current, root);
     match arg {
         ExprResult::Value(v) => ExprResult::Value(v),
-        ExprResult::NodeList(list) if list.len() == 1 => ExprResult::Value(list[0].clone()),
+        ExprResult::OwnedValue(v) => ExprResult::OwnedValue(v),
+        ExprResult::NodeList(list) if list.len() == 1 => ExprResult::Value(list[0]),
         _ => ExprResult::Nothing,
     }
 }
@@ -374,17 +390,22 @@ fn regex_string_match(string: &str, pattern: &str, full_match: bool) -> bool {
 }
 
 /// RFC 9535 match() function: returns true if string matches regex (full match)
-fn fn_match(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
+fn fn_match<'a>(args: &[Expr], current: &'a Value, root: &'a Value) -> ExprResult<'a> {
     regex_function(args, current, root, true)
 }
 
 /// RFC 9535 search() function: returns true if regex pattern found anywhere in string
-fn fn_search(args: &[Expr], current: &Value, root: &Value) -> ExprResult {
+fn fn_search<'a>(args: &[Expr], current: &'a Value, root: &'a Value) -> ExprResult<'a> {
     regex_function(args, current, root, false)
 }
 
 /// Common implementation for match() and search() functions
-fn regex_function(args: &[Expr], current: &Value, root: &Value, full_match: bool) -> ExprResult {
+fn regex_function<'a>(
+    args: &[Expr],
+    current: &'a Value,
+    root: &'a Value,
+    full_match: bool,
+) -> ExprResult<'a> {
     if args.len() != 2 {
         return ExprResult::Nothing;
     }
@@ -394,20 +415,21 @@ fn regex_function(args: &[Expr], current: &Value, root: &Value, full_match: bool
 
     let string = match string_arg.to_value() {
         Some(Value::String(s)) => s.as_str(),
-        _ => return ExprResult::Value(Value::Bool(false)),
+        _ => return ExprResult::OwnedValue(Value::Bool(false)),
     };
 
     let pattern = match pattern_arg.to_value() {
         Some(Value::String(p)) => p.as_str(),
-        _ => return ExprResult::Value(Value::Bool(false)),
+        _ => return ExprResult::OwnedValue(Value::Bool(false)),
     };
 
-    ExprResult::Value(Value::Bool(regex_string_match(string, pattern, full_match)))
+    ExprResult::OwnedValue(Value::Bool(regex_string_match(string, pattern, full_match)))
 }
 
 /// Compare two expression results with the given operator
 /// Per RFC 9535: comparisons require singular queries on both sides
-fn compare_values(left: &ExprResult, op: CompOp, right: &ExprResult) -> bool {
+#[inline]
+fn compare_values(left: &ExprResult<'_>, op: CompOp, right: &ExprResult<'_>) -> bool {
     // RFC 9535: Non-singular queries in comparisons always return false
     if !left.is_singular() || !right.is_singular() {
         return false;
@@ -426,6 +448,7 @@ fn compare_values(left: &ExprResult, op: CompOp, right: &ExprResult) -> bool {
 }
 
 /// Compare two JSON values
+#[inline]
 fn compare_json_values(left: &Value, op: CompOp, right: &Value) -> bool {
     match op {
         CompOp::Eq => values_equal(left, right),
@@ -438,6 +461,7 @@ fn compare_json_values(left: &Value, op: CompOp, right: &Value) -> bool {
 }
 
 /// Check if two JSON values are equal
+#[inline]
 fn values_equal(left: &Value, right: &Value) -> bool {
     match (left, right) {
         (Value::Null, Value::Null) => true,
@@ -454,6 +478,7 @@ fn values_equal(left: &Value, right: &Value) -> bool {
 }
 
 /// Check if left < right (only for comparable types)
+#[inline]
 fn values_less_than(left: &Value, right: &Value) -> bool {
     match (left, right) {
         (Value::Number(l), Value::Number(r)) => match (l.as_f64(), r.as_f64()) {
