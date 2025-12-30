@@ -160,7 +160,6 @@ impl Parser {
     }
 
     fn parse_bracket_selectors(&mut self) -> Result<Vec<Selector>, ParseError> {
-        // Consume '['
         if self.current_kind() != Some(&TokenKind::BracketOpen) {
             return Err(ParseError {
                 message: "expected '['".to_string(),
@@ -214,7 +213,7 @@ impl Parser {
             }
             Some(TokenKind::Number(_, _)) | Some(TokenKind::Colon) => self.parse_index_or_slice(),
             Some(TokenKind::Question) => {
-                self.advance(); // consume '?'
+                self.advance();
                 let expr = self.parse_expression()?;
                 // RFC 9535: Literal alone is not allowed as filter expression
                 if matches!(expr, Expr::Literal(_)) {
@@ -265,12 +264,12 @@ impl Parser {
         }
 
         // It's a slice
-        self.advance(); // consume first ':'
+        self.advance();
 
         let end = self.try_parse_index_number()?;
 
         let step = if self.current_kind() == Some(&TokenKind::Colon) {
-            self.advance(); // consume second ':'
+            self.advance();
             self.try_parse_index_number()?
         } else {
             None
@@ -366,7 +365,7 @@ impl Parser {
 
         while self.current_kind() == Some(&TokenKind::Or) {
             let op_pos = self.current_position();
-            self.advance(); // consume '||'
+            self.advance();
             let right = self.parse_and_expression()?;
 
             // RFC 9535: Logical operators require LogicalType operands (not bare literals)
@@ -389,7 +388,7 @@ impl Parser {
 
         while self.current_kind() == Some(&TokenKind::And) {
             let op_pos = self.current_position();
-            self.advance(); // consume '&&'
+            self.advance();
             let right = self.parse_comparison_expression()?;
 
             // RFC 9535: Logical operators require LogicalType operands (not bare literals)
@@ -506,7 +505,7 @@ impl Parser {
     /// Parse unary expression: !expr or atom
     fn parse_unary_expression(&mut self) -> Result<Expr, ParseError> {
         if self.current_kind() == Some(&TokenKind::Not) {
-            self.advance(); // consume '!'
+            self.advance();
             let expr = self.parse_unary_expression()?;
             Ok(Expr::Not(Box::new(expr)))
         } else {
@@ -518,11 +517,11 @@ impl Parser {
     fn parse_atom(&mut self) -> Result<Expr, ParseError> {
         match self.current_kind().cloned() {
             Some(TokenKind::At) => {
-                self.advance(); // consume '@'
+                self.advance();
                 self.parse_path_or_node(Expr::CurrentNode)
             }
             Some(TokenKind::Root) => {
-                self.advance(); // consume '$'
+                self.advance();
                 self.parse_path_or_node(Expr::RootNode)
             }
             Some(TokenKind::True) => {
@@ -568,7 +567,7 @@ impl Parser {
                 }
             }
             Some(TokenKind::ParenOpen) => {
-                self.advance(); // consume '('
+                self.advance();
                 let expr = self.parse_expression()?;
                 if self.current_kind() != Some(&TokenKind::ParenClose) {
                     return Err(ParseError {
@@ -576,7 +575,7 @@ impl Parser {
                         position: self.current_position(),
                     });
                 }
-                self.advance(); // consume ')'
+                self.advance();
                 Ok(expr)
             }
             Some(kind) => Err(ParseError {
@@ -646,7 +645,7 @@ impl Parser {
                 Ok(Segment::Child(selectors))
             }
             Some(TokenKind::BracketOpen) => {
-                self.advance(); // consume '['
+                self.advance();
                 let mut selectors = Vec::new();
                 loop {
                     let selector = self.parse_filter_bracket_selector()?;
@@ -695,7 +694,7 @@ impl Parser {
             }
             // RFC 9535: Bracket selectors can follow '.' or '..' (e.g., $..['key'])
             Some(TokenKind::BracketOpen) => {
-                self.advance(); // consume '['
+                self.advance();
                 let mut selectors = Vec::new();
                 loop {
                     let selector = self.parse_filter_bracket_selector()?;
@@ -743,8 +742,7 @@ impl Parser {
             }
             Some(TokenKind::Number(_, _)) | Some(TokenKind::Colon) => self.parse_index_or_slice(),
             Some(TokenKind::Question) => {
-                // Nested filter expression: [?expr]
-                self.advance(); // consume '?'
+                self.advance();
                 let expr = self.parse_expression()?;
                 // RFC 9535: Literal alone is not allowed as filter expression
                 if matches!(expr, Expr::Literal(_)) {
@@ -770,7 +768,6 @@ impl Parser {
     fn parse_function_call(&mut self, name: String) -> Result<Expr, ParseError> {
         let func_pos = self.current_position();
 
-        // Consume '('
         if self.current_kind() != Some(&TokenKind::ParenOpen) {
             return Err(ParseError {
                 message: "expected '(' after function name".to_string(),
@@ -781,19 +778,15 @@ impl Parser {
 
         let mut args = Vec::new();
 
-        // Check for empty argument list
         if self.current_kind() != Some(&TokenKind::ParenClose) {
-            // Parse first argument
             args.push(self.parse_expression()?);
 
-            // Parse remaining arguments
             while self.current_kind() == Some(&TokenKind::Comma) {
-                self.advance(); // consume ','
+                self.advance();
                 args.push(self.parse_expression()?);
             }
         }
 
-        // Consume ')'
         if self.current_kind() != Some(&TokenKind::ParenClose) {
             return Err(ParseError {
                 message: "expected ')' after function arguments".to_string(),
