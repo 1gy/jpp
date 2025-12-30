@@ -441,46 +441,59 @@ fn compare_values(left: &ExprResult<'_>, op: CompOp, right: &ExprResult<'_>) -> 
     }
 }
 
-/// Compare two JSON values
+/// Compare two JSON values with the given operator.
+/// Uses single-pass extraction for numeric comparisons to avoid redundant as_f64() calls.
 #[inline]
 fn compare_json_values(left: &Value, op: CompOp, right: &Value) -> bool {
-    match op {
-        CompOp::Eq => values_equal(left, right),
-        CompOp::Ne => !values_equal(left, right),
-        CompOp::Lt => values_less_than(left, right),
-        CompOp::Gt => values_less_than(right, left),
-        CompOp::Le => values_equal(left, right) || values_less_than(left, right),
-        CompOp::Ge => values_equal(left, right) || values_less_than(right, left),
-    }
-}
-
-/// Check if two JSON values are equal
-#[inline]
-fn values_equal(left: &Value, right: &Value) -> bool {
     match (left, right) {
-        (Value::Null, Value::Null) => true,
-        (Value::Bool(l), Value::Bool(r)) => l == r,
+        // Numbers: single-pass comparison with all operators
         (Value::Number(l), Value::Number(r)) => {
-            // Compare as f64 for consistency
-            l.as_f64() == r.as_f64()
+            match (l.as_f64(), r.as_f64()) {
+                (Some(lf), Some(rf)) => match op {
+                    CompOp::Eq => lf == rf,
+                    CompOp::Ne => lf != rf,
+                    CompOp::Lt => lf < rf,
+                    CompOp::Gt => lf > rf,
+                    CompOp::Le => lf <= rf,
+                    CompOp::Ge => lf >= rf,
+                },
+                _ => false, // NaN/invalid numbers
+            }
         }
-        (Value::String(l), Value::String(r)) => l == r,
-        (Value::Array(l), Value::Array(r)) => l == r,
-        (Value::Object(l), Value::Object(r)) => l == r,
-        _ => false, // Different types are never equal
-    }
-}
-
-/// Check if left < right (only for comparable types)
-#[inline]
-fn values_less_than(left: &Value, right: &Value) -> bool {
-    match (left, right) {
-        (Value::Number(l), Value::Number(r)) => match (l.as_f64(), r.as_f64()) {
-            (Some(lf), Some(rf)) => lf < rf,
-            _ => false,
+        // Strings: comparable types
+        (Value::String(l), Value::String(r)) => match op {
+            CompOp::Eq => l == r,
+            CompOp::Ne => l != r,
+            CompOp::Lt => l < r,
+            CompOp::Gt => l > r,
+            CompOp::Le => l <= r,
+            CompOp::Ge => l >= r,
         },
-        (Value::String(l), Value::String(r)) => l < r,
-        _ => false, // Non-comparable types
+        // Null: only equality comparison
+        (Value::Null, Value::Null) => matches!(op, CompOp::Eq | CompOp::Le | CompOp::Ge),
+        // Bool: equality and Le/Ge (when equal)
+        (Value::Bool(l), Value::Bool(r)) => match op {
+            CompOp::Eq => l == r,
+            CompOp::Ne => l != r,
+            CompOp::Le | CompOp::Ge => l == r, // Le/Ge true only if equal
+            CompOp::Lt | CompOp::Gt => false,  // No ordering for bools
+        },
+        // Arrays: equality and Le/Ge (when equal)
+        (Value::Array(l), Value::Array(r)) => match op {
+            CompOp::Eq => l == r,
+            CompOp::Ne => l != r,
+            CompOp::Le | CompOp::Ge => l == r, // Le/Ge true only if equal
+            CompOp::Lt | CompOp::Gt => false,  // No ordering for arrays
+        },
+        // Objects: equality and Le/Ge (when equal)
+        (Value::Object(l), Value::Object(r)) => match op {
+            CompOp::Eq => l == r,
+            CompOp::Ne => l != r,
+            CompOp::Le | CompOp::Ge => l == r, // Le/Ge true only if equal
+            CompOp::Lt | CompOp::Gt => false,  // No ordering for objects
+        },
+        // Different types: never equal
+        _ => matches!(op, CompOp::Ne),
     }
 }
 
