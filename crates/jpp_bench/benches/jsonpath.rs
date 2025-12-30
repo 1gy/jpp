@@ -149,23 +149,18 @@ fn bench_comparison(c: &mut Criterion) {
 
     // === Property access ===
 
-    // jpp with parsing (original)
+    // jpp with parsing (includes parse time)
     group.bench_function("jpp/property", |b| {
         b.iter(|| query(black_box("$.store.book"), black_box(&json)))
     });
 
-    // jpp pre-parsed (fair comparison)
+    // jpp pre-parsed (fair comparison, zero-copy)
     let jpp_property = JsonPath::parse("$.store.book").unwrap();
-    group.bench_function("jpp_compiled/property", |b| {
+    group.bench_function("jpp_parsed/property", |b| {
         b.iter(|| jpp_property.query(black_box(&json)))
     });
 
-    // jpp pre-compiled zero-copy
-    group.bench_function("jpp_compiled_ref/property", |b| {
-        b.iter(|| jpp_property.query_ref(black_box(&json)))
-    });
-
-    // serde_json_path (pre-compiled)
+    // serde_json_path (pre-parsed)
     let sjp_path = serde_json_path::JsonPath::parse("$.store.book").unwrap();
     group.bench_function("serde_json_path/property", |b| {
         b.iter(|| sjp_path.query(black_box(&json)))
@@ -173,23 +168,18 @@ fn bench_comparison(c: &mut Criterion) {
 
     // === Filter query ===
 
-    // jpp with parsing (original)
+    // jpp with parsing (includes parse time)
     group.bench_function("jpp/filter", |b| {
         b.iter(|| query(black_box("$.store.book[?@.price < 10]"), black_box(&json)))
     });
 
-    // jpp pre-parsed (fair comparison)
+    // jpp pre-parsed (fair comparison, zero-copy)
     let jpp_filter = JsonPath::parse("$.store.book[?@.price < 10]").unwrap();
-    group.bench_function("jpp_compiled/filter", |b| {
+    group.bench_function("jpp_parsed/filter", |b| {
         b.iter(|| jpp_filter.query(black_box(&json)))
     });
 
-    // jpp pre-compiled zero-copy
-    group.bench_function("jpp_compiled_ref/filter", |b| {
-        b.iter(|| jpp_filter.query_ref(black_box(&json)))
-    });
-
-    // serde_json_path (pre-compiled)
+    // serde_json_path (pre-parsed)
     let sjp_filter = serde_json_path::JsonPath::parse("$.store.book[?@.price < 10]").unwrap();
     group.bench_function("serde_json_path/filter", |b| {
         b.iter(|| sjp_filter.query(black_box(&json)))
@@ -197,23 +187,18 @@ fn bench_comparison(c: &mut Criterion) {
 
     // === Descendant query ===
 
-    // jpp with parsing (original)
+    // jpp with parsing (includes parse time)
     group.bench_function("jpp/descendant", |b| {
         b.iter(|| query(black_box("$..price"), black_box(&json)))
     });
 
-    // jpp pre-parsed (fair comparison)
+    // jpp pre-parsed (fair comparison, zero-copy)
     let jpp_desc = JsonPath::parse("$..price").unwrap();
-    group.bench_function("jpp_compiled/descendant", |b| {
+    group.bench_function("jpp_parsed/descendant", |b| {
         b.iter(|| jpp_desc.query(black_box(&json)))
     });
 
-    // jpp pre-compiled zero-copy
-    group.bench_function("jpp_compiled_ref/descendant", |b| {
-        b.iter(|| jpp_desc.query_ref(black_box(&json)))
-    });
-
-    // serde_json_path (pre-compiled)
+    // serde_json_path (pre-parsed)
     let sjp_desc = serde_json_path::JsonPath::parse("$..price").unwrap();
     group.bench_function("serde_json_path/descendant", |b| {
         b.iter(|| sjp_desc.query(black_box(&json)))

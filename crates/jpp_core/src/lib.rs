@@ -10,13 +10,12 @@
 //! let path = JsonPath::parse("$.store.book[*].price").unwrap();
 //! let json = json!({"store": {"book": [{"price": 10}, {"price": 20}]}});
 //!
-//! // Get owned values
+//! // Query returns references (zero-copy)
 //! let results = path.query(&json);
-//! assert_eq!(results, vec![json!(10), json!(20)]);
+//! assert_eq!(results, vec![&json!(10), &json!(20)]);
 //!
-//! // Or get references (zero-copy)
-//! let refs = path.query_ref(&json);
-//! assert_eq!(refs.len(), 2);
+//! // Clone if you need owned values
+//! let owned: Vec<_> = results.into_iter().cloned().collect();
 //! ```
 
 pub mod ast;
@@ -44,13 +43,16 @@ impl JsonPath {
     /// let path = JsonPath::parse("$.foo").unwrap();
     /// let json = json!({"foo": "bar"});
     /// let results = path.query(&json);
-    /// assert_eq!(results, vec![json!("bar")]);
+    /// assert_eq!(results, vec![&json!("bar")]);
     /// ```
     pub fn parse(jsonpath: &str) -> Result<Self, Error> {
         parser::Parser::parse(jsonpath).map_err(Error::from)
     }
 
-    /// Execute the query and return owned values (cloned)
+    /// Execute the query and return references to matching values
+    ///
+    /// Returns references to the matched values within the input JSON.
+    /// This is a zero-copy operation for maximum performance.
     ///
     /// # Example
     /// ```
@@ -60,28 +62,12 @@ impl JsonPath {
     /// let path = JsonPath::parse("$.items[*]").unwrap();
     /// let json = json!({"items": [1, 2, 3]});
     /// let results = path.query(&json);
-    /// assert_eq!(results, vec![json!(1), json!(2), json!(3)]);
-    /// ```
-    pub fn query(&self, json: &Value) -> Vec<Value> {
-        eval::evaluate(self, json).into_iter().cloned().collect()
-    }
-
-    /// Execute the query and return references (zero-copy)
+    /// assert_eq!(results, vec![&json!(1), &json!(2), &json!(3)]);
     ///
-    /// This is more efficient than [`query`](Self::query) when you don't need
-    /// to own the returned values.
-    ///
-    /// # Example
+    /// // Clone if you need owned values
+    /// let owned: Vec<_> = results.into_iter().cloned().collect();
     /// ```
-    /// use serde_json::json;
-    /// use jpp_core::JsonPath;
-    ///
-    /// let path = JsonPath::parse("$.name").unwrap();
-    /// let json = json!({"name": "Alice"});
-    /// let refs = path.query_ref(&json);
-    /// assert_eq!(refs, vec![&json!("Alice")]);
-    /// ```
-    pub fn query_ref<'a>(&self, json: &'a Value) -> Vec<&'a Value> {
+    pub fn query<'a>(&self, json: &'a Value) -> Vec<&'a Value> {
         eval::evaluate(self, json)
     }
 }
@@ -110,12 +96,15 @@ impl From<parser::ParseError> for Error {
 
 /// Execute a JSONPath query against a JSON value
 ///
+/// This is a convenience function that parses and executes in one step.
+/// For repeated queries, use [`JsonPath::parse`] to parse once and reuse.
+///
 /// # Arguments
 /// * `jsonpath` - A JSONPath query string (e.g., "$.store.book[*].author")
 /// * `json` - The JSON value to query
 ///
 /// # Returns
-/// A vector of matching JSON values, or an error if the query is invalid
+/// A vector of references to matching JSON values, or an error if the query is invalid
 ///
 /// # Example
 /// ```
@@ -124,12 +113,11 @@ impl From<parser::ParseError> for Error {
 ///
 /// let json = json!({"foo": "bar"});
 /// let results = query("$.foo", &json).unwrap();
-/// assert_eq!(results, vec![json!("bar")]);
+/// assert_eq!(results, vec![&json!("bar")]);
 /// ```
-pub fn query(jsonpath: &str, json: &Value) -> Result<Vec<Value>, Error> {
+pub fn query<'a>(jsonpath: &str, json: &'a Value) -> Result<Vec<&'a Value>, Error> {
     let path = parser::Parser::parse(jsonpath)?;
-    let results = eval::evaluate(&path, json);
-    Ok(results.into_iter().cloned().collect())
+    Ok(eval::evaluate(&path, json))
 }
 
 #[cfg(test)]
@@ -142,21 +130,21 @@ mod tests {
     fn test_query_simple() {
         let json = json!({"foo": "bar"});
         let results = query("$.foo", &json).unwrap();
-        assert_eq!(results, vec![json!("bar")]);
+        assert_eq!(results, vec![&json!("bar")]);
     }
 
     #[test]
     fn test_query_array() {
         let json = json!({"arr": [1, 2, 3]});
         let results = query("$.arr[0]", &json).unwrap();
-        assert_eq!(results, vec![json!(1)]);
+        assert_eq!(results, vec![&json!(1)]);
     }
 
     #[test]
     fn test_query_wildcard() {
         let json = json!({"arr": [1, 2, 3]});
         let results = query("$.arr[*]", &json).unwrap();
-        assert_eq!(results, vec![json!(1), json!(2), json!(3)]);
+        assert_eq!(results, vec![&json!(1), &json!(2), &json!(3)]);
     }
 
     #[test]
@@ -171,14 +159,6 @@ mod tests {
         let path = JsonPath::parse("$.foo").unwrap();
         let json = json!({"foo": "bar"});
         let results = path.query(&json);
-        assert_eq!(results, vec![json!("bar")]);
-    }
-
-    #[test]
-    fn test_jsonpath_query_ref() {
-        let path = JsonPath::parse("$.foo").unwrap();
-        let json = json!({"foo": "bar"});
-        let results = path.query_ref(&json);
         assert_eq!(results, vec![&json!("bar")]);
     }
 
@@ -187,8 +167,8 @@ mod tests {
         let path = JsonPath::parse("$.value").unwrap();
         let json1 = json!({"value": 1});
         let json2 = json!({"value": 2});
-        assert_eq!(path.query(&json1), vec![json!(1)]);
-        assert_eq!(path.query(&json2), vec![json!(2)]);
+        assert_eq!(path.query(&json1), vec![&json!(1)]);
+        assert_eq!(path.query(&json2), vec![&json!(2)]);
     }
 
     #[test]

@@ -59,8 +59,9 @@ fn run_cts_test(test: &CtsTest) -> (bool, Option<String>) {
                     vec![]
                 };
 
-                // Compare results
-                if results == expected {
+                // Compare results (results is Vec<&Value>, expected is Vec<Value>)
+                let expected_refs: Vec<&Value> = expected.iter().collect();
+                if results == expected_refs {
                     (true, None)
                 } else {
                     (
