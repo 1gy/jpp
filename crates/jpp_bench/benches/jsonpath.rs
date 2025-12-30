@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)]
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use jpp_core::query;
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use jpp_core::{compile, query};
 use serde_json::Value;
 
 const SMALL_JSON: &str = include_str!("../data/small.json");
@@ -147,31 +147,73 @@ fn bench_comparison(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("comparison");
 
-    // Simple property access
+    // === Property access ===
+
+    // jpp with parsing (original)
     group.bench_function("jpp/property", |b| {
         b.iter(|| query(black_box("$.store.book"), black_box(&json)))
     });
 
+    // jpp pre-compiled (fair comparison)
+    let jpp_property = compile("$.store.book").unwrap();
+    group.bench_function("jpp_compiled/property", |b| {
+        b.iter(|| jpp_property.query(black_box(&json)))
+    });
+
+    // jpp pre-compiled zero-copy
+    group.bench_function("jpp_compiled_ref/property", |b| {
+        b.iter(|| jpp_property.query_ref(black_box(&json)))
+    });
+
+    // serde_json_path (pre-compiled)
     let sjp_path = serde_json_path::JsonPath::parse("$.store.book").unwrap();
     group.bench_function("serde_json_path/property", |b| {
         b.iter(|| sjp_path.query(black_box(&json)))
     });
 
-    // Filter query
+    // === Filter query ===
+
+    // jpp with parsing (original)
     group.bench_function("jpp/filter", |b| {
         b.iter(|| query(black_box("$.store.book[?@.price < 10]"), black_box(&json)))
     });
 
+    // jpp pre-compiled (fair comparison)
+    let jpp_filter = compile("$.store.book[?@.price < 10]").unwrap();
+    group.bench_function("jpp_compiled/filter", |b| {
+        b.iter(|| jpp_filter.query(black_box(&json)))
+    });
+
+    // jpp pre-compiled zero-copy
+    group.bench_function("jpp_compiled_ref/filter", |b| {
+        b.iter(|| jpp_filter.query_ref(black_box(&json)))
+    });
+
+    // serde_json_path (pre-compiled)
     let sjp_filter = serde_json_path::JsonPath::parse("$.store.book[?@.price < 10]").unwrap();
     group.bench_function("serde_json_path/filter", |b| {
         b.iter(|| sjp_filter.query(black_box(&json)))
     });
 
-    // Descendant query
+    // === Descendant query ===
+
+    // jpp with parsing (original)
     group.bench_function("jpp/descendant", |b| {
         b.iter(|| query(black_box("$..price"), black_box(&json)))
     });
 
+    // jpp pre-compiled (fair comparison)
+    let jpp_desc = compile("$..price").unwrap();
+    group.bench_function("jpp_compiled/descendant", |b| {
+        b.iter(|| jpp_desc.query(black_box(&json)))
+    });
+
+    // jpp pre-compiled zero-copy
+    group.bench_function("jpp_compiled_ref/descendant", |b| {
+        b.iter(|| jpp_desc.query_ref(black_box(&json)))
+    });
+
+    // serde_json_path (pre-compiled)
     let sjp_desc = serde_json_path::JsonPath::parse("$..price").unwrap();
     group.bench_function("serde_json_path/descendant", |b| {
         b.iter(|| sjp_desc.query(black_box(&json)))
