@@ -145,6 +145,7 @@ pub fn evaluate<'a>(path: &JsonPath, root: &'a Value) -> Vec<&'a Value> {
     current.into_vec()
 }
 
+#[inline]
 fn evaluate_segment<'a>(segment: &Segment, nodes: &[&'a Value], root: &'a Value) -> NodeList<'a> {
     match segment {
         Segment::Child(selectors) => {
@@ -171,6 +172,7 @@ fn evaluate_segment<'a>(segment: &Segment, nodes: &[&'a Value], root: &'a Value)
     }
 }
 
+#[inline]
 fn evaluate_selector<'a>(selector: &Selector, node: &'a Value, root: &'a Value) -> NodeList<'a> {
     match selector {
         Selector::Name(name) => {
@@ -205,6 +207,7 @@ fn evaluate_selector<'a>(selector: &Selector, node: &'a Value, root: &'a Value) 
 }
 
 /// Evaluate a filter expression against a node
+#[inline]
 fn evaluate_filter<'a>(expr: &Expr, node: &'a Value, root: &'a Value) -> NodeList<'a> {
     match node {
         Value::Array(arr) => arr
@@ -289,6 +292,7 @@ fn evaluate_expr<'a>(expr: &Expr, current: &'a Value, root: &'a Value) -> ExprRe
 }
 
 /// Evaluate path segments starting from a value
+#[inline]
 fn evaluate_path_segments<'a>(
     segments: &[Segment],
     start: &'a Value,
