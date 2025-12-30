@@ -71,7 +71,8 @@ jpp/
 │       └── src/
 │           └── main.rs
 └── tests/                  # CTSテストデータ
-    └── cts.json
+    └── cts/
+        └── cts.json
 ```
 
 ---
