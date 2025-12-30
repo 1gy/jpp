@@ -3,8 +3,13 @@
 use crate::ast::{CompOp, Expr, JsonPath, LogicalOp, Segment, Selector};
 use regex::Regex;
 use serde_json::Value;
+use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;
 use std::collections::HashMap;
+
+/// A list of JSON value references, optimized for the common case of 1 element.
+/// Uses stack allocation for up to 1 element, heap allocation for more.
+type NodeList<'a> = SmallVec<[&'a Value; 1]>;
 
 // Thread-local cache for compiled regex patterns.
 // Regex compilation is expensive (~10μs+), but the compiled Regex is cheap to clone (Arc-based).
@@ -76,7 +81,7 @@ enum ExprResult<'a> {
     /// An owned JSON value (for literals, computed booleans)
     OwnedValue(Value),
     /// Multiple values from a path query (references)
-    NodeList(Vec<&'a Value>),
+    NodeList(NodeList<'a>),
     /// No result (missing property, failed comparison, etc.)
     Nothing,
 }
@@ -131,19 +136,19 @@ fn value_is_truthy(v: &Value) -> bool {
 
 /// Evaluate a JSONPath query against a JSON value
 pub fn evaluate<'a>(path: &JsonPath, root: &'a Value) -> Vec<&'a Value> {
-    let mut current = vec![root];
+    let mut current: NodeList<'a> = smallvec![root];
 
     for segment in &path.segments {
         current = evaluate_segment(segment, &current, root);
     }
 
-    current
+    current.into_vec()
 }
 
-fn evaluate_segment<'a>(segment: &Segment, nodes: &[&'a Value], root: &'a Value) -> Vec<&'a Value> {
+fn evaluate_segment<'a>(segment: &Segment, nodes: &[&'a Value], root: &'a Value) -> NodeList<'a> {
     match segment {
         Segment::Child(selectors) => {
-            let mut results = Vec::new();
+            let mut results: NodeList<'a> = SmallVec::new();
             for node in nodes {
                 for selector in selectors {
                     results.extend(evaluate_selector(selector, node, root));
@@ -152,7 +157,7 @@ fn evaluate_segment<'a>(segment: &Segment, nodes: &[&'a Value], root: &'a Value)
             results
         }
         Segment::Descendant(selectors) => {
-            let mut results = Vec::new();
+            let mut results: NodeList<'a> = SmallVec::new();
             for node in nodes {
                 let descendants = collect_descendants(node);
                 for desc in &descendants {
@@ -166,13 +171,13 @@ fn evaluate_segment<'a>(segment: &Segment, nodes: &[&'a Value], root: &'a Value)
     }
 }
 
-fn evaluate_selector<'a>(selector: &Selector, node: &'a Value, root: &'a Value) -> Vec<&'a Value> {
+fn evaluate_selector<'a>(selector: &Selector, node: &'a Value, root: &'a Value) -> NodeList<'a> {
     match selector {
         Selector::Name(name) => {
             if let Value::Object(map) = node {
                 map.get(name).into_iter().collect()
             } else {
-                vec![]
+                SmallVec::new()
             }
         }
         Selector::Index(idx) => {
@@ -180,19 +185,19 @@ fn evaluate_selector<'a>(selector: &Selector, node: &'a Value, root: &'a Value) 
                 let index = normalize_index(*idx, arr.len());
                 index.and_then(|i| arr.get(i)).into_iter().collect()
             } else {
-                vec![]
+                SmallVec::new()
             }
         }
         Selector::Wildcard => match node {
             Value::Array(arr) => arr.iter().collect(),
             Value::Object(map) => map.values().collect(),
-            _ => vec![],
+            _ => SmallVec::new(),
         },
         Selector::Slice { start, end, step } => {
             if let Value::Array(arr) = node {
                 evaluate_slice(arr, *start, *end, *step)
             } else {
-                vec![]
+                SmallVec::new()
             }
         }
         Selector::Filter(expr) => evaluate_filter(expr, node, root),
@@ -200,7 +205,7 @@ fn evaluate_selector<'a>(selector: &Selector, node: &'a Value, root: &'a Value) 
 }
 
 /// Evaluate a filter expression against a node
-fn evaluate_filter<'a>(expr: &Expr, node: &'a Value, root: &'a Value) -> Vec<&'a Value> {
+fn evaluate_filter<'a>(expr: &Expr, node: &'a Value, root: &'a Value) -> NodeList<'a> {
     match node {
         Value::Array(arr) => arr
             .iter()
@@ -216,7 +221,7 @@ fn evaluate_filter<'a>(expr: &Expr, node: &'a Value, root: &'a Value) -> Vec<&'a
                 result.is_truthy()
             })
             .collect(),
-        _ => vec![],
+        _ => SmallVec::new(),
     }
 }
 
@@ -227,7 +232,7 @@ fn evaluate_expr<'a>(expr: &Expr, current: &'a Value, root: &'a Value) -> ExprRe
         // RFC 9535: Bare @ in filter expression is an existence test.
         // Return as NodeList so is_truthy() checks existence, not value truthiness.
         // This ensures $[?@] includes null values (they exist, even if not truthy).
-        Expr::CurrentNode => ExprResult::NodeList(vec![current]),
+        Expr::CurrentNode => ExprResult::NodeList(smallvec![current]),
         Expr::RootNode => ExprResult::Value(root),
         Expr::Path { start, segments } => {
             let start_value = match start.as_ref() {
@@ -288,14 +293,13 @@ fn evaluate_path_segments<'a>(
     segments: &[Segment],
     start: &'a Value,
     root: &'a Value,
-) -> Vec<&'a Value> {
-    let mut current = vec![start];
+) -> NodeList<'a> {
+    let mut current: NodeList<'a> = smallvec![start];
     for segment in segments {
         current = evaluate_segment(segment, &current, root);
     }
     current
 }
-
 
 /// Evaluate a built-in function call
 #[inline]
@@ -496,12 +500,12 @@ fn evaluate_slice(
     start: Option<i64>,
     end: Option<i64>,
     step: Option<i64>,
-) -> Vec<&Value> {
+) -> NodeList<'_> {
     let len = arr.len() as i64;
     let step = step.unwrap_or(1);
 
     if step == 0 {
-        return vec![];
+        return SmallVec::new();
     }
 
     let (start, end) = if step > 0 {
@@ -519,7 +523,7 @@ fn evaluate_slice(
         (start.min(len - 1), end.max(-1))
     };
 
-    let mut results = Vec::new();
+    let mut results: NodeList<'_> = SmallVec::new();
 
     if step > 0 {
         let mut i = start;

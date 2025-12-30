@@ -1227,10 +1227,7 @@ mod tests {
                 Selector::Filter(expr) => match expr.as_ref() {
                     Expr::Comparison { op, right, .. } => {
                         assert_eq!(*op, CompOp::Ne);
-                        assert_eq!(
-                            **right,
-                            Expr::Literal(CachedLiteral::new(Literal::Null))
-                        );
+                        assert_eq!(**right, Expr::Literal(CachedLiteral::new(Literal::Null)));
                     }
                     _ => panic!("expected Comparison expression"),
                 },
