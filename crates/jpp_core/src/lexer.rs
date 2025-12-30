@@ -385,14 +385,12 @@ impl<'a> Lexer<'a> {
         let start_pos = self.position;
         let mut num_str = String::new();
 
-        // Optional leading minus sign
         if self.chars.peek() == Some(&'-')
             && let Some(ch) = self.advance()
         {
             num_str.push(ch);
         }
 
-        // Integer part
         let int_start = num_str.len();
         while let Some(&ch) = self.chars.peek() {
             if ch.is_ascii_digit() {
@@ -426,15 +424,14 @@ impl<'a> Lexer<'a> {
         // Track if number has decimal point or exponent (makes it a "float")
         let mut has_decimal_or_exp = false;
 
-        // Decimal part (optional)
         if self.chars.peek() == Some(&'.') {
             // Peek ahead to ensure it's followed by a digit (not another dot like ..)
             let mut chars_clone = self.chars.clone();
-            chars_clone.next(); // consume the '.'
+            chars_clone.next();
             if chars_clone.peek().is_some_and(|c| c.is_ascii_digit()) {
                 has_decimal_or_exp = true;
                 if let Some(dot) = self.advance() {
-                    num_str.push(dot); // consume '.'
+                    num_str.push(dot);
                 }
                 while let Some(&ch) = self.chars.peek() {
                     if ch.is_ascii_digit() {
@@ -448,21 +445,18 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Exponent part (optional)
         if self.chars.peek().is_some_and(|&c| c == 'e' || c == 'E') {
             has_decimal_or_exp = true;
             if let Some(e) = self.advance() {
-                num_str.push(e); // consume 'e' or 'E'
+                num_str.push(e);
             }
 
-            // Optional sign for exponent
             if self.chars.peek().is_some_and(|&c| c == '+' || c == '-')
                 && let Some(sign) = self.advance()
             {
                 num_str.push(sign);
             }
 
-            // Exponent digits (required)
             let exp_start = num_str.len();
             while let Some(&ch) = self.chars.peek() {
                 if ch.is_ascii_digit() {
@@ -511,7 +505,6 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Check for keywords
         match ident.as_str() {
             "true" => TokenKind::True,
             "false" => TokenKind::False,
