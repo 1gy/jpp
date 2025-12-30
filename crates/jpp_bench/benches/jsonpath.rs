@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used)]
+
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use jpp_core::query;
 use serde_json::Value;

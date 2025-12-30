@@ -1,8 +1,9 @@
 [package]
 name = "jpp_bench"
-version = "0.1.0"
-edition = "2024"
-publish = false
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
 
 [dependencies]
 jpp_core = { path = "../jpp_core" }
@@ -16,5 +17,5 @@ serde_json_path = "0.7"
 name = "jsonpath"
 harness = false
 
-[lints.clippy]
-unwrap_used = "allow"
+[lints]
+workspace = true
