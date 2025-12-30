@@ -562,7 +562,6 @@ fn collect_descendants(node: &Value) -> Vec<&Value> {
                 stack.extend(arr.iter().rev());
             }
             Value::Object(map) => {
-                // Push in reverse order to maintain traversal order
                 stack.extend(map.values().rev());
             }
             _ => {}
