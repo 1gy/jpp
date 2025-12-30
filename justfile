@@ -19,6 +19,12 @@ test:
 coverage:
   cargo llvm-cov
 
+bench:
+  cargo bench -p jpp_bench
+
+bench-filter FILTER:
+  cargo bench -p jpp_bench -- {{FILTER}}
+
 setup:
   cargo install cargo-llvm-cov --locked
 
