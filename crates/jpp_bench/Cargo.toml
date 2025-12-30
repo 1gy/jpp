@@ -1,0 +1,21 @@
+[package]
+name = "jpp_bench"
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+jpp_core = { path = "../jpp_core" }
+serde_json = "1"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+serde_json_path = "0.7"
+
+[[bench]]
+name = "jsonpath"
+harness = false
+
+[lints]
+workspace = true
