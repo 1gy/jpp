@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used)]
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use jpp_core::{compile, query};
+use jpp_core::{JsonPath, query};
 use serde_json::Value;
 
 const SMALL_JSON: &str = include_str!("../data/small.json");
@@ -154,8 +154,8 @@ fn bench_comparison(c: &mut Criterion) {
         b.iter(|| query(black_box("$.store.book"), black_box(&json)))
     });
 
-    // jpp pre-compiled (fair comparison)
-    let jpp_property = compile("$.store.book").unwrap();
+    // jpp pre-parsed (fair comparison)
+    let jpp_property = JsonPath::parse("$.store.book").unwrap();
     group.bench_function("jpp_compiled/property", |b| {
         b.iter(|| jpp_property.query(black_box(&json)))
     });
@@ -178,8 +178,8 @@ fn bench_comparison(c: &mut Criterion) {
         b.iter(|| query(black_box("$.store.book[?@.price < 10]"), black_box(&json)))
     });
 
-    // jpp pre-compiled (fair comparison)
-    let jpp_filter = compile("$.store.book[?@.price < 10]").unwrap();
+    // jpp pre-parsed (fair comparison)
+    let jpp_filter = JsonPath::parse("$.store.book[?@.price < 10]").unwrap();
     group.bench_function("jpp_compiled/filter", |b| {
         b.iter(|| jpp_filter.query(black_box(&json)))
     });
@@ -202,8 +202,8 @@ fn bench_comparison(c: &mut Criterion) {
         b.iter(|| query(black_box("$..price"), black_box(&json)))
     });
 
-    // jpp pre-compiled (fair comparison)
-    let jpp_desc = compile("$..price").unwrap();
+    // jpp pre-parsed (fair comparison)
+    let jpp_desc = JsonPath::parse("$..price").unwrap();
     group.bench_function("jpp_compiled/descendant", |b| {
         b.iter(|| jpp_desc.query(black_box(&json)))
     });
