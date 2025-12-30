@@ -1,5 +1,7 @@
 //! AST definitions for JSONPath queries (RFC 9535)
 
+use serde_json::Value;
+
 /// A complete JSONPath query
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsonPath {
@@ -48,8 +50,8 @@ pub enum Expr {
         /// Path segments to traverse
         segments: Vec<Segment>,
     },
-    /// Literal value
-    Literal(Literal),
+    /// Literal value (with pre-cached JSON Value)
+    Literal(CachedLiteral),
     /// Comparison expression: `@.price < 10`
     Comparison {
         left: Box<Expr>,
@@ -105,6 +107,44 @@ pub enum Literal {
     Number(f64),
     /// String value
     String(String),
+}
+
+/// Literal with pre-computed JSON Value for efficient evaluation.
+/// The cached_value is computed once at parse time, avoiding repeated
+/// conversions during filter evaluation.
+#[derive(Debug, Clone)]
+pub struct CachedLiteral {
+    /// The original literal value
+    pub literal: Literal,
+    /// Pre-computed serde_json::Value for fast evaluation
+    pub cached_value: Value,
+}
+
+impl CachedLiteral {
+    /// Create a new CachedLiteral with pre-computed Value
+    #[inline]
+    pub fn new(literal: Literal) -> Self {
+        let cached_value = match &literal {
+            Literal::Null => Value::Null,
+            Literal::Bool(b) => Value::Bool(*b),
+            Literal::Number(n) => serde_json::Number::from_f64(*n)
+                .map(Value::Number)
+                .unwrap_or(Value::Null),
+            Literal::String(s) => Value::String(s.clone()),
+        };
+        Self {
+            literal,
+            cached_value,
+        }
+    }
+}
+
+// PartialEq compares only the literal, ignoring cached_value
+// (cached_value is deterministically derived from literal)
+impl PartialEq for CachedLiteral {
+    fn eq(&self, other: &Self) -> bool {
+        self.literal == other.literal
+    }
 }
 
 impl JsonPath {

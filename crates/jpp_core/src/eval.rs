@@ -1,6 +1,6 @@
 //! Evaluator for JSONPath queries
 
-use crate::ast::{CompOp, Expr, JsonPath, Literal, LogicalOp, Segment, Selector};
+use crate::ast::{CompOp, Expr, JsonPath, LogicalOp, Segment, Selector};
 use regex::Regex;
 use serde_json::Value;
 use std::cell::RefCell;
@@ -246,7 +246,8 @@ fn evaluate_expr<'a>(expr: &Expr, current: &'a Value, root: &'a Value) -> ExprRe
                 ExprResult::NodeList(results)
             }
         }
-        Expr::Literal(lit) => ExprResult::OwnedValue(literal_to_value(lit)),
+        // Use pre-computed cached value - clone is cheaper than repeated from_f64() conversion
+        Expr::Literal(cached) => ExprResult::OwnedValue(cached.cached_value.clone()),
         Expr::Comparison { left, op, right } => {
             let left_result = evaluate_expr(left, current, root);
             let right_result = evaluate_expr(right, current, root);
@@ -295,21 +296,6 @@ fn evaluate_path_segments<'a>(
     current
 }
 
-/// Convert a Literal to a JSON Value
-fn literal_to_value(lit: &Literal) -> Value {
-    match lit {
-        Literal::Null => Value::Null,
-        Literal::Bool(b) => Value::Bool(*b),
-        Literal::Number(n) => {
-            // Try to create a JSON number from f64
-            // This will fail for NaN/Infinity, in which case we return Null
-            serde_json::Number::from_f64(*n)
-                .map(Value::Number)
-                .unwrap_or(Value::Null)
-        }
-        Literal::String(s) => Value::String(s.clone()),
-    }
-}
 
 /// Evaluate a built-in function call
 #[inline]

@@ -1,6 +1,6 @@
 //! Parser for JSONPath queries
 
-use crate::ast::{CompOp, Expr, JsonPath, Literal, LogicalOp, Segment, Selector};
+use crate::ast::{CachedLiteral, CompOp, Expr, JsonPath, Literal, LogicalOp, Segment, Selector};
 use crate::lexer::{Lexer, LexerError, Token, TokenKind};
 
 /// RFC 9535: Functions that return LogicalType (cannot be used in comparisons)
@@ -526,23 +526,23 @@ impl Parser {
             }
             Some(TokenKind::True) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::Bool(true)))
+                Ok(Expr::Literal(CachedLiteral::new(Literal::Bool(true))))
             }
             Some(TokenKind::False) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::Bool(false)))
+                Ok(Expr::Literal(CachedLiteral::new(Literal::Bool(false))))
             }
             Some(TokenKind::Null) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::Null))
+                Ok(Expr::Literal(CachedLiteral::new(Literal::Null)))
             }
             Some(TokenKind::Number(n, _)) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::Number(n)))
+                Ok(Expr::Literal(CachedLiteral::new(Literal::Number(n))))
             }
             Some(TokenKind::String(s)) => {
                 self.advance();
-                Ok(Expr::Literal(Literal::String(s)))
+                Ok(Expr::Literal(CachedLiteral::new(Literal::String(s))))
             }
             Some(TokenKind::Ident(name)) => {
                 let ident_pos = self.current_position();
@@ -1099,7 +1099,10 @@ mod tests {
                                 _ => panic!("expected Path on left"),
                             }
                             // right should be 10
-                            assert_eq!(**right, Expr::Literal(Literal::Number(10.0)));
+                            assert_eq!(
+                                **right,
+                                Expr::Literal(CachedLiteral::new(Literal::Number(10.0)))
+                            );
                         }
                         _ => panic!("expected Comparison expression"),
                     },
@@ -1183,7 +1186,10 @@ mod tests {
                             }
                             _ => panic!("expected FunctionCall on left"),
                         }
-                        assert_eq!(**right, Expr::Literal(Literal::Number(0.0)));
+                        assert_eq!(
+                            **right,
+                            Expr::Literal(CachedLiteral::new(Literal::Number(0.0)))
+                        );
                     }
                     _ => panic!("expected Comparison expression"),
                 },
@@ -1200,7 +1206,10 @@ mod tests {
             Segment::Child(selectors) => match &selectors[0] {
                 Selector::Filter(expr) => match expr.as_ref() {
                     Expr::Comparison { right, .. } => {
-                        assert_eq!(**right, Expr::Literal(Literal::String("test".to_string())));
+                        assert_eq!(
+                            **right,
+                            Expr::Literal(CachedLiteral::new(Literal::String("test".to_string())))
+                        );
                     }
                     _ => panic!("expected Comparison expression"),
                 },
@@ -1218,7 +1227,10 @@ mod tests {
                 Selector::Filter(expr) => match expr.as_ref() {
                     Expr::Comparison { op, right, .. } => {
                         assert_eq!(*op, CompOp::Ne);
-                        assert_eq!(**right, Expr::Literal(Literal::Null));
+                        assert_eq!(
+                            **right,
+                            Expr::Literal(CachedLiteral::new(Literal::Null))
+                        );
                     }
                     _ => panic!("expected Comparison expression"),
                 },
