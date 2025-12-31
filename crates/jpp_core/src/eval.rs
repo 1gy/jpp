@@ -1,11 +1,18 @@
 //! Evaluator for JSONPath queries
 
-use crate::ast::{CompOp, Expr, JsonPath, LogicalOp, Segment, Selector};
+use crate::ast::{CompOp, Expr, JsonPath, Literal, LogicalOp, Segment, Selector};
 use regex::Regex;
 use serde_json::Value;
 use smallvec::{SmallVec, smallvec};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::LazyLock;
+
+// Static Bool/Null values for zero-copy filter evaluation.
+// These avoid allocating new Value instances for comparison results and common literals.
+static TRUE_VAL: LazyLock<Value> = LazyLock::new(|| Value::Bool(true));
+static FALSE_VAL: LazyLock<Value> = LazyLock::new(|| Value::Bool(false));
+static NULL_VAL: LazyLock<Value> = LazyLock::new(|| Value::Null);
 
 /// A list of JSON value references, optimized for the common case of 1 element.
 /// Uses stack allocation for up to 1 element, heap allocation for more.
@@ -254,38 +261,60 @@ fn evaluate_expr<'a>(expr: &Expr, current: &'a Value, root: &'a Value) -> ExprRe
                 ExprResult::NodeList(results)
             }
         }
-        // Use pre-computed cached value - clone is cheaper than repeated from_f64() conversion
-        Expr::Literal(cached) => ExprResult::OwnedValue(cached.cached_value.clone()),
+        // Use static references for Bool/Null to avoid cloning, cached value for others
+        Expr::Literal(cached) => match &cached.literal {
+            Literal::Bool(true) => ExprResult::Value(&*TRUE_VAL),
+            Literal::Bool(false) => ExprResult::Value(&*FALSE_VAL),
+            Literal::Null => ExprResult::Value(&*NULL_VAL),
+            // Numbers and strings still need the cached value (clone is unavoidable)
+            _ => ExprResult::OwnedValue(cached.cached_value.clone()),
+        },
         Expr::Comparison { left, op, right } => {
             let left_result = evaluate_expr(left, current, root);
             let right_result = evaluate_expr(right, current, root);
             let result = compare_values(&left_result, *op, &right_result);
-            ExprResult::OwnedValue(Value::Bool(result))
+            if result {
+                ExprResult::Value(&*TRUE_VAL)
+            } else {
+                ExprResult::Value(&*FALSE_VAL)
+            }
         }
         Expr::Logical { left, op, right } => {
             let left_result = evaluate_expr(left, current, root);
             match op {
                 LogicalOp::And => {
                     if !left_result.is_truthy() {
-                        ExprResult::OwnedValue(Value::Bool(false))
+                        ExprResult::Value(&*FALSE_VAL)
                     } else {
                         let right_result = evaluate_expr(right, current, root);
-                        ExprResult::OwnedValue(Value::Bool(right_result.is_truthy()))
+                        if right_result.is_truthy() {
+                            ExprResult::Value(&*TRUE_VAL)
+                        } else {
+                            ExprResult::Value(&*FALSE_VAL)
+                        }
                     }
                 }
                 LogicalOp::Or => {
                     if left_result.is_truthy() {
-                        ExprResult::OwnedValue(Value::Bool(true))
+                        ExprResult::Value(&*TRUE_VAL)
                     } else {
                         let right_result = evaluate_expr(right, current, root);
-                        ExprResult::OwnedValue(Value::Bool(right_result.is_truthy()))
+                        if right_result.is_truthy() {
+                            ExprResult::Value(&*TRUE_VAL)
+                        } else {
+                            ExprResult::Value(&*FALSE_VAL)
+                        }
                     }
                 }
             }
         }
         Expr::Not(inner) => {
             let inner_result = evaluate_expr(inner, current, root);
-            ExprResult::OwnedValue(Value::Bool(!inner_result.is_truthy()))
+            if inner_result.is_truthy() {
+                ExprResult::Value(&*FALSE_VAL)
+            } else {
+                ExprResult::Value(&*TRUE_VAL)
+            }
         }
         Expr::FunctionCall { name, args } => evaluate_function(name, args, current, root),
     }
@@ -409,15 +438,19 @@ fn regex_function<'a>(
 
     let string = match string_arg.to_value() {
         Some(Value::String(s)) => s.as_str(),
-        _ => return ExprResult::OwnedValue(Value::Bool(false)),
+        _ => return ExprResult::Value(&*FALSE_VAL),
     };
 
     let pattern = match pattern_arg.to_value() {
         Some(Value::String(p)) => p.as_str(),
-        _ => return ExprResult::OwnedValue(Value::Bool(false)),
+        _ => return ExprResult::Value(&*FALSE_VAL),
     };
 
-    ExprResult::OwnedValue(Value::Bool(regex_string_match(string, pattern, full_match)))
+    if regex_string_match(string, pattern, full_match) {
+        ExprResult::Value(&*TRUE_VAL)
+    } else {
+        ExprResult::Value(&*FALSE_VAL)
+    }
 }
 
 /// Compare two expression results with the given operator
