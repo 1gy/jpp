@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import JppWorker from '../worker/jpp.worker?worker'
 
 export type JppResult =
@@ -14,13 +14,10 @@ type WorkerResponse = {
   | { status: 'error'; message: string }
 )
 
-const DEBOUNCE_MS = 300
-
 export function useJpp(jsonpath: string, json: string): JppResult {
   const [result, setResult] = useState<JppResult>({ status: 'idle' })
   const workerRef = useRef<Worker | null>(null)
   const requestIdRef = useRef(0)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Initialize worker
   useEffect(() => {
@@ -39,33 +36,20 @@ export function useJpp(jsonpath: string, json: string): JppResult {
     }
   }, [])
 
-  // Debounced execution
+  // Immediate execution
   useEffect(() => {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current)
-    }
-
     if (!jsonpath.trim() || !json.trim()) {
       setResult({ status: 'idle' })
       return
     }
 
     setResult({ status: 'loading' })
-
-    debounceRef.current = setTimeout(() => {
-      requestIdRef.current += 1
-      workerRef.current?.postMessage({
-        id: requestIdRef.current,
-        jsonpath,
-        json,
-      })
-    }, DEBOUNCE_MS)
-
-    return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current)
-      }
-    }
+    requestIdRef.current += 1
+    workerRef.current?.postMessage({
+      id: requestIdRef.current,
+      jsonpath,
+      json,
+    })
   }, [jsonpath, json])
 
   return result
