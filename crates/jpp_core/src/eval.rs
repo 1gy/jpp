@@ -167,12 +167,8 @@ fn evaluate_segment<'a>(segment: &Segment, nodes: &[&'a Value], root: &'a Value)
         Segment::Descendant(selectors) => {
             let mut results: NodeList<'a> = SmallVec::new();
             for node in nodes {
-                let descendants = collect_descendants(node);
-                for desc in &descendants {
-                    for selector in selectors {
-                        results.extend(evaluate_selector(selector, desc, root));
-                    }
-                }
+                // Inline traversal: evaluate selectors during DFS, avoiding intermediate Vec
+                evaluate_descendant_inline(selectors, node, root, &mut results);
             }
             results
         }
@@ -263,9 +259,9 @@ fn evaluate_expr<'a>(expr: &Expr, current: &'a Value, root: &'a Value) -> ExprRe
         }
         // Use static references for Bool/Null to avoid cloning, cached value for others
         Expr::Literal(cached) => match &cached.literal {
-            Literal::Bool(true) => ExprResult::Value(&*TRUE_VAL),
-            Literal::Bool(false) => ExprResult::Value(&*FALSE_VAL),
-            Literal::Null => ExprResult::Value(&*NULL_VAL),
+            Literal::Bool(true) => ExprResult::Value(&TRUE_VAL),
+            Literal::Bool(false) => ExprResult::Value(&FALSE_VAL),
+            Literal::Null => ExprResult::Value(&NULL_VAL),
             // Numbers and strings still need the cached value (clone is unavoidable)
             _ => ExprResult::OwnedValue(cached.cached_value.clone()),
         },
@@ -281,9 +277,9 @@ fn evaluate_expr<'a>(expr: &Expr, current: &'a Value, root: &'a Value) -> ExprRe
             };
             let result = compare_values(&left_result, *op, &right_result);
             if result {
-                ExprResult::Value(&*TRUE_VAL)
+                ExprResult::Value(&TRUE_VAL)
             } else {
-                ExprResult::Value(&*FALSE_VAL)
+                ExprResult::Value(&FALSE_VAL)
             }
         }
         Expr::Logical { left, op, right } => {
@@ -291,25 +287,25 @@ fn evaluate_expr<'a>(expr: &Expr, current: &'a Value, root: &'a Value) -> ExprRe
             match op {
                 LogicalOp::And => {
                     if !left_result.is_truthy() {
-                        ExprResult::Value(&*FALSE_VAL)
+                        ExprResult::Value(&FALSE_VAL)
                     } else {
                         let right_result = evaluate_expr(right, current, root);
                         if right_result.is_truthy() {
-                            ExprResult::Value(&*TRUE_VAL)
+                            ExprResult::Value(&TRUE_VAL)
                         } else {
-                            ExprResult::Value(&*FALSE_VAL)
+                            ExprResult::Value(&FALSE_VAL)
                         }
                     }
                 }
                 LogicalOp::Or => {
                     if left_result.is_truthy() {
-                        ExprResult::Value(&*TRUE_VAL)
+                        ExprResult::Value(&TRUE_VAL)
                     } else {
                         let right_result = evaluate_expr(right, current, root);
                         if right_result.is_truthy() {
-                            ExprResult::Value(&*TRUE_VAL)
+                            ExprResult::Value(&TRUE_VAL)
                         } else {
-                            ExprResult::Value(&*FALSE_VAL)
+                            ExprResult::Value(&FALSE_VAL)
                         }
                     }
                 }
@@ -318,9 +314,9 @@ fn evaluate_expr<'a>(expr: &Expr, current: &'a Value, root: &'a Value) -> ExprRe
         Expr::Not(inner) => {
             let inner_result = evaluate_expr(inner, current, root);
             if inner_result.is_truthy() {
-                ExprResult::Value(&*FALSE_VAL)
+                ExprResult::Value(&FALSE_VAL)
             } else {
-                ExprResult::Value(&*TRUE_VAL)
+                ExprResult::Value(&TRUE_VAL)
             }
         }
         Expr::FunctionCall { name, args } => evaluate_function(name, args, current, root),
@@ -445,18 +441,18 @@ fn regex_function<'a>(
 
     let string = match string_arg.to_value() {
         Some(Value::String(s)) => s.as_str(),
-        _ => return ExprResult::Value(&*FALSE_VAL),
+        _ => return ExprResult::Value(&FALSE_VAL),
     };
 
     let pattern = match pattern_arg.to_value() {
         Some(Value::String(p)) => p.as_str(),
-        _ => return ExprResult::Value(&*FALSE_VAL),
+        _ => return ExprResult::Value(&FALSE_VAL),
     };
 
     if regex_string_match(string, pattern, full_match) {
-        ExprResult::Value(&*TRUE_VAL)
+        ExprResult::Value(&TRUE_VAL)
     } else {
-        ExprResult::Value(&*FALSE_VAL)
+        ExprResult::Value(&FALSE_VAL)
     }
 }
 
@@ -622,24 +618,33 @@ fn normalize_slice_bound_for_negative_step(bound: i64, len: i64) -> i64 {
     }
 }
 
-fn collect_descendants(node: &Value) -> Vec<&Value> {
-    let mut results = Vec::new();
-    let mut stack = vec![node];
-
-    while let Some(current) = stack.pop() {
-        results.push(current);
-        match current {
-            Value::Array(arr) => {
-                // Push in reverse order to maintain traversal order
-                stack.extend(arr.iter().rev());
-            }
-            Value::Object(map) => {
-                stack.extend(map.values().rev());
-            }
-            _ => {}
-        }
+/// Evaluate descendant selectors inline during DFS traversal.
+/// This avoids the intermediate Vec allocation of collect_descendants.
+fn evaluate_descendant_inline<'a>(
+    selectors: &[Selector],
+    node: &'a Value,
+    root: &'a Value,
+    results: &mut NodeList<'a>,
+) {
+    // Evaluate selectors on current node
+    for selector in selectors {
+        results.extend(evaluate_selector(selector, node, root));
     }
-    results
+
+    // Recurse into children
+    match node {
+        Value::Array(arr) => {
+            for child in arr {
+                evaluate_descendant_inline(selectors, child, root, results);
+            }
+        }
+        Value::Object(map) => {
+            for child in map.values() {
+                evaluate_descendant_inline(selectors, child, root, results);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]
