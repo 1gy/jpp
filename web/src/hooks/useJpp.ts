@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import init, { query } from '../wasm/jpp_wasm'
+import init, { query } from '../../wasm/jpp_wasm'
 
 type JppResult =
   | { status: 'loading' }
