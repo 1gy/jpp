@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useJpp } from './hooks/useJpp'
 import { Header } from './components/Header'
 import { QueryInput } from './components/QueryInput'
@@ -16,19 +16,9 @@ const DEFAULT_JSON = `{
 }`
 
 function App() {
-  const { ready, execute } = useJpp()
   const [query, setQuery] = useState('$.store.book[*].author')
   const [json, setJson] = useState(DEFAULT_JSON)
-
-  const result = useMemo(() => {
-    if (!ready) {
-      return { status: 'loading' as const }
-    }
-    if (!query.trim() || !json.trim()) {
-      return { status: 'idle' as const }
-    }
-    return execute(query, json)
-  }, [ready, query, json, execute])
+  const result = useJpp(query, json)
 
   return (
     <div className={styles.container}>

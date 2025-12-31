@@ -1,32 +1,72 @@
-import { useState, useEffect, useCallback } from 'react'
-import init, { query } from '../../wasm/jpp_wasm'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import JppWorker from '../worker/jpp.worker?worker'
 
-type JppResult =
+export type JppResult =
+  | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'success'; data: string }
   | { status: 'error'; message: string }
 
-export function useJpp() {
-  const [ready, setReady] = useState(false)
+type WorkerResponse = {
+  id: number
+} & (
+  | { status: 'success'; data: string }
+  | { status: 'error'; message: string }
+)
 
+const DEBOUNCE_MS = 300
+
+export function useJpp(jsonpath: string, json: string): JppResult {
+  const [result, setResult] = useState<JppResult>({ status: 'idle' })
+  const workerRef = useRef<Worker | null>(null)
+  const requestIdRef = useRef(0)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Initialize worker
   useEffect(() => {
-    init().then(() => setReady(true))
+    workerRef.current = new JppWorker()
+
+    workerRef.current.onmessage = (e: MessageEvent<WorkerResponse>) => {
+      const { id, ...response } = e.data
+      // Only accept the latest request
+      if (id === requestIdRef.current) {
+        setResult(response)
+      }
+    }
+
+    return () => {
+      workerRef.current?.terminate()
+    }
   }, [])
 
-  const execute = useCallback(
-    (jsonpath: string, json: string): JppResult => {
-      if (!ready) {
-        return { status: 'loading' }
-      }
-      try {
-        const result = query(jsonpath, json)
-        return { status: 'success', data: result }
-      } catch (e) {
-        return { status: 'error', message: String(e) }
-      }
-    },
-    [ready]
-  )
+  // Debounced execution
+  useEffect(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current)
+    }
 
-  return { ready, execute }
+    if (!jsonpath.trim() || !json.trim()) {
+      setResult({ status: 'idle' })
+      return
+    }
+
+    setResult({ status: 'loading' })
+
+    debounceRef.current = setTimeout(() => {
+      requestIdRef.current += 1
+      workerRef.current?.postMessage({
+        id: requestIdRef.current,
+        jsonpath,
+        json,
+      })
+    }, DEBOUNCE_MS)
+
+    return () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current)
+      }
+    }
+  }, [jsonpath, json])
+
+  return result
 }
