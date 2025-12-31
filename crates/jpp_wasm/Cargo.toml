@@ -1,0 +1,17 @@
+[package]
+name = "jpp_wasm"
+authors.workspace = true
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jpp_core = { path = "../jpp_core" }
+wasm-bindgen = "0.2"
+serde_json = "1"
+
+[lints]
+workspace = true
