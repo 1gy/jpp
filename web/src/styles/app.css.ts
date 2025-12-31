@@ -126,3 +126,14 @@ export const loadingText = style({
   color: colors.textMuted,
   fontStyle: 'italic',
 })
+
+export const editorWrapper = style({
+  flex: 1,
+  position: 'relative',
+  minHeight: 0,
+})
+
+export const editorInner = style({
+  position: 'absolute',
+  inset: 0,
+})

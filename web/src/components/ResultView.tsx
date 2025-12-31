@@ -24,20 +24,24 @@ export function ResultView({ result }: ResultViewProps) {
   }
 
   return (
-    <Editor
-      language="json"
-      theme="light"
-      value={result.data}
-      options={{
-        readOnly: true,
-        minimap: { enabled: false },
-        fontSize: 14,
-        fontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace",
-        lineNumbers: 'on',
-        scrollBeyondLastLine: false,
-        automaticLayout: true,
-        tabSize: 2,
-      }}
-    />
+    <div className={styles.editorWrapper}>
+      <div className={styles.editorInner}>
+        <Editor
+          language="json"
+          theme="light"
+          value={result.data}
+          options={{
+            readOnly: true,
+            minimap: { enabled: false },
+            fontSize: 14,
+            fontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace",
+            lineNumbers: 'on',
+            scrollBeyondLastLine: false,
+            automaticLayout: true,
+            tabSize: 2,
+          }}
+        />
+      </div>
+    </div>
   )
 }
