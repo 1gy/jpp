@@ -246,6 +246,22 @@ fn evaluate_expr<'a>(expr: &Expr, current: &'a Value, root: &'a Value) -> ExprRe
                 Expr::RootNode => root,
                 _ => return ExprResult::Nothing,
             };
+
+            // Fast path: single property access (@.name or $.name)
+            // Avoids SmallVec allocation for the most common filter pattern
+            if let [Segment::Child(selectors)] = segments.as_slice()
+                && let [Selector::Name(name)] = selectors.as_slice()
+            {
+                return match start_value {
+                    Value::Object(map) => match map.get(name.as_str()) {
+                        Some(v) => ExprResult::NodeList(smallvec![v]),
+                        None => ExprResult::Nothing,
+                    },
+                    _ => ExprResult::Nothing,
+                };
+            }
+
+            // General path evaluation
             let results = evaluate_path_segments(segments, start_value, root);
             if results.is_empty() {
                 ExprResult::Nothing
