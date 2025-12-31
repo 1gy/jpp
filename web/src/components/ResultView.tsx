@@ -9,7 +9,8 @@ interface ResultViewProps {
 
 export function ResultView({ loading, result }: ResultViewProps) {
   const opacity = loading ? 0.5 : 1
-  const transition = 'opacity 0.15s ease-in-out'
+  // Only animate fade-out, snap back immediately
+  const transition = loading ? 'opacity 0.15s ease-in-out' : 'none'
 
   if (result.status === 'idle') {
     return (
