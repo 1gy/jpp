@@ -1,11 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import JppWorker from '../worker/jpp.worker?worker'
 
-export type JppResult =
+export type JppData =
   | { status: 'idle' }
-  | { status: 'loading' }
   | { status: 'success'; data: string }
   | { status: 'error'; message: string }
+
+export type JppResult = {
+  loading: boolean
+  result: JppData
+}
 
 type WorkerResponse = {
   id: number
@@ -15,7 +19,8 @@ type WorkerResponse = {
 )
 
 export function useJpp(jsonpath: string, json: string): JppResult {
-  const [result, setResult] = useState<JppResult>({ status: 'idle' })
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<JppData>({ status: 'idle' })
   const workerRef = useRef<Worker | null>(null)
   const requestIdRef = useRef(0)
 
@@ -28,6 +33,7 @@ export function useJpp(jsonpath: string, json: string): JppResult {
       // Only accept the latest request
       if (id === requestIdRef.current) {
         setResult(response)
+        setLoading(false)
       }
     }
 
@@ -40,10 +46,11 @@ export function useJpp(jsonpath: string, json: string): JppResult {
   useEffect(() => {
     if (!jsonpath.trim() || !json.trim()) {
       setResult({ status: 'idle' })
+      setLoading(false)
       return
     }
 
-    setResult({ status: 'loading' })
+    setLoading(true)
     requestIdRef.current += 1
     workerRef.current?.postMessage({
       id: requestIdRef.current,
@@ -52,5 +59,5 @@ export function useJpp(jsonpath: string, json: string): JppResult {
     })
   }, [jsonpath, json])
 
-  return result
+  return { loading, result }
 }
