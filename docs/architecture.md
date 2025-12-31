@@ -36,6 +36,7 @@ graph TB
     subgraph "外部依存"
         SJ[serde_json<br/>JSON パース]
         RE[regex<br/>正規表現]
+        SV[smallvec<br/>最適化]
     end
 
     CLI --> LIB
@@ -46,6 +47,7 @@ graph TB
     EVA --> AST
     EVA --> SJ
     EVA --> RE
+    EVA --> SV
     CLI --> SJ
     LIB --> SJ
 ```
@@ -67,12 +69,15 @@ jpp/
 │   │   │   └── eval.rs     # 評価エンジン
 │   │   └── tests/
 │   │       └── cts_test.rs # CTS統合テスト
-│   └── jpp_cli/            # CLIバイナリ
-│       └── src/
-│           └── main.rs
-└── tests/                  # CTSテストデータ
-    └── cts/
-        └── cts.json
+│   ├── jpp_cli/            # CLIバイナリ
+│   │   └── src/
+│   │       └── main.rs
+│   └── jpp_bench/          # ベンチマーク
+│       ├── benches/
+│       │   └── jsonpath.rs
+│       └── data/           # ベンチマーク用JSONデータ
+└── tests/
+    └── cts/                # CTS (git submodule)
 ```
 
 ---
@@ -162,11 +167,16 @@ classDiagram
         CurrentNode
         RootNode
         Path~start, segments~
-        Literal(Literal)
+        Literal(CachedLiteral)
         Comparison~left, op, right~
         Logical~left, op, right~
         Not(Box~Expr~)
         FunctionCall~name, args~
+    }
+
+    class CachedLiteral {
+        +literal: Literal
+        +cached_value: Value
     }
 
     class Path {
@@ -196,7 +206,8 @@ classDiagram
     Segment --> Selector
     Selector --> Expr
     Expr --> Path
-    Expr --> Literal
+    Expr --> CachedLiteral
+    CachedLiteral --> Literal
     Expr --> CompOp
     Expr --> LogicalOp
     Path --> Segment
@@ -219,6 +230,7 @@ Path {
 - `Box<Expr>` で再帰構造を表現（フィルタ内のネストに対応）
 - `Segment` は `Child` と `Descendant` の2種類のみ（RFC 9535準拠）
 - 数値は `f64` で統一（JSON の Number 型に合わせる）
+- `CachedLiteral` でパース時に `serde_json::Value` をキャッシュ（評価時の変換コスト削減）
 
 ### 2. lexer.rs - 字句解析
 
@@ -472,10 +484,17 @@ fn transform_pattern_for_iregexp(pattern: &str) -> String {
 
 ### 5. lib.rs - 公開API
 
-ライブラリの唯一の公開関数:
+ライブラリの主要な公開API:
 
 ```rust
-pub fn query(jsonpath: &str, json: &Value) -> Result<Vec<Value>, Error>
+// パースと実行を分離するAPI（推奨）
+impl JsonPath {
+    pub fn parse(jsonpath: &str) -> Result<Self, Error>;
+    pub fn query<'a>(&self, json: &'a Value) -> Vec<&'a Value>;
+}
+
+// 便利関数（一回限りのクエリ用）
+pub fn query<'a>(jsonpath: &str, json: &'a Value) -> Result<Vec<&'a Value>, Error>
 ```
 
 **エラー型の統一:**
@@ -490,8 +509,8 @@ impl From<ParseError> for Error { ... }  // ParseError から変換
 ```
 
 **設計判断:**
-- 結果は `Vec<Value>`（所有権を返す）
-- 内部では参照で処理し、最後に clone
+- 結果は `Vec<&Value>`（参照を返す、ゼロコピー）
+- `JsonPath::parse()` でパース済みクエリを再利用可能
 - エラーは独自の `Error` 型に統一
 
 ### 6. main.rs - CLI
@@ -583,6 +602,7 @@ graph TD
     subgraph "External Crates"
         SJ[serde_json 1.x]
         RE[regex 1.x]
+        SV[smallvec 1.x]
     end
 
     CLI --> Core
@@ -603,6 +623,7 @@ graph TD
 |---------|------|
 | `serde_json` | デファクトスタンダード、高速、広く使われている |
 | `regex` | Rust標準の正規表現、Unicode対応 |
+| `smallvec` | ヒープアロケーション削減によるパフォーマンス向上 |
 
 ---
 
