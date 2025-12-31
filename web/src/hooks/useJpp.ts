@@ -1,15 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useSyncExternalStore } from 'react'
 import JppWorker from '../worker/jpp.worker?worker'
 
-export type JppData =
+export type JppResult =
   | { status: 'idle' }
   | { status: 'success'; data: string }
   | { status: 'error'; message: string }
-
-export type JppResult = {
-  loading: boolean
-  result: JppData
-}
 
 type WorkerResponse = {
   id: number
@@ -18,46 +13,47 @@ type WorkerResponse = {
   | { status: 'error'; message: string }
 )
 
+const worker = new JppWorker()
+let currentId = 0
+let currentResult: JppResult = { status: 'idle' }
+let listeners: Set<() => void> = new Set()
+
+worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
+  const { id, ...response } = e.data
+  if (id === currentId) {
+    currentResult = response
+    listeners.forEach((l) => l())
+  }
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+function getSnapshot() {
+  return currentResult
+}
+
+function query(jsonpath: string, json: string) {
+  if (!jsonpath.trim() || !json.trim()) {
+    currentResult = { status: 'idle' }
+    listeners.forEach((l) => l())
+    return
+  }
+  currentId += 1
+  worker.postMessage({ id: currentId, jsonpath, json })
+}
+
 export function useJpp(jsonpath: string, json: string): JppResult {
-  const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<JppData>({ status: 'idle' })
-  const workerRef = useRef<Worker | null>(null)
-  const requestIdRef = useRef(0)
+  const result = useSyncExternalStore(subscribe, getSnapshot)
 
-  // Initialize worker
-  useEffect(() => {
-    workerRef.current = new JppWorker()
+  // Query on every render with new inputs
+  const key = jsonpath + '\0' + json
+  if ((query as any).lastKey !== key) {
+    (query as any).lastKey = key
+    query(jsonpath, json)
+  }
 
-    workerRef.current.onmessage = (e: MessageEvent<WorkerResponse>) => {
-      const { id, ...response } = e.data
-      // Only accept the latest request
-      if (id === requestIdRef.current) {
-        setResult(response)
-        setLoading(false)
-      }
-    }
-
-    return () => {
-      workerRef.current?.terminate()
-    }
-  }, [])
-
-  // Immediate execution
-  useEffect(() => {
-    if (!jsonpath.trim() || !json.trim()) {
-      setResult({ status: 'idle' })
-      setLoading(false)
-      return
-    }
-
-    setLoading(true)
-    requestIdRef.current += 1
-    workerRef.current?.postMessage({
-      id: requestIdRef.current,
-      jsonpath,
-      json,
-    })
-  }, [jsonpath, json])
-
-  return { loading, result }
+  return result
 }

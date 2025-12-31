@@ -18,7 +18,7 @@ const DEFAULT_JSON = `{
 function App() {
   const [query, setQuery] = useState('$.store.book[*].author')
   const [json, setJson] = useState(DEFAULT_JSON)
-  const { loading, result } = useJpp(query, json)
+  const result = useJpp(query, json)
 
   return (
     <div className={styles.container}>
@@ -34,7 +34,7 @@ function App() {
         <div className={styles.rightPane}>
           <div className={styles.paneHeader}>Result</div>
           <div className={styles.paneContent}>
-            <ResultView loading={loading} result={result} />
+            <ResultView result={result} />
           </div>
         </div>
       </main>
