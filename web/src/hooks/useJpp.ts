@@ -16,7 +16,8 @@ type WorkerResponse = {
 const worker = new JppWorker()
 let currentId = 0
 let currentResult: JppResult = { status: 'idle' }
-let listeners: Set<() => void> = new Set()
+let lastQuery = ''
+const listeners = new Set<() => void>()
 
 worker.onmessage = (e: MessageEvent<WorkerResponse>) => {
   const { id, ...response } = e.data
@@ -36,6 +37,10 @@ function getSnapshot() {
 }
 
 function query(jsonpath: string, json: string) {
+  const key = jsonpath + '\0' + json
+  if (key === lastQuery) return
+  lastQuery = key
+
   if (!jsonpath.trim() || !json.trim()) {
     currentResult = { status: 'idle' }
     listeners.forEach((l) => l())
@@ -46,14 +51,6 @@ function query(jsonpath: string, json: string) {
 }
 
 export function useJpp(jsonpath: string, json: string): JppResult {
-  const result = useSyncExternalStore(subscribe, getSnapshot)
-
-  // Query on every render with new inputs
-  const key = jsonpath + '\0' + json
-  if ((query as any).lastKey !== key) {
-    (query as any).lastKey = key
-    query(jsonpath, json)
-  }
-
-  return result
+  query(jsonpath, json)
+  return useSyncExternalStore(subscribe, getSnapshot)
 }
