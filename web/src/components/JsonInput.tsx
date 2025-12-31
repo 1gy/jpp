@@ -1,4 +1,4 @@
-import * as styles from '../styles/app.css'
+import Editor from '@monaco-editor/react'
 
 interface JsonInputProps {
   value: string
@@ -7,12 +7,20 @@ interface JsonInputProps {
 
 export function JsonInput({ value, onChange }: JsonInputProps) {
   return (
-    <textarea
-      className={styles.textarea}
+    <Editor
+      language="json"
+      theme="light"
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder='{"store": {"book": [...]}}'
-      spellCheck={false}
+      onChange={(v) => onChange(v ?? '')}
+      options={{
+        minimap: { enabled: false },
+        fontSize: 14,
+        fontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace",
+        lineNumbers: 'on',
+        scrollBeyondLastLine: false,
+        automaticLayout: true,
+        tabSize: 2,
+      }}
     />
   )
 }

@@ -1,3 +1,4 @@
+import Editor from '@monaco-editor/react'
 import * as styles from '../styles/app.css'
 
 interface ResultViewProps {
@@ -7,18 +8,45 @@ interface ResultViewProps {
 }
 
 export function ResultView({ status, data, message }: ResultViewProps) {
-  return (
-    <div className={styles.resultArea}>
-      {status === 'loading' && (
-        <span className={styles.loadingText}>Loading WASM...</span>
-      )}
-      {status === 'idle' && (
+  if (status === 'loading') {
+    return (
+      <div className={styles.resultArea}>
+        <span className={styles.loadingText}>Loading...</span>
+      </div>
+    )
+  }
+
+  if (status === 'idle') {
+    return (
+      <div className={styles.resultArea}>
         <span className={styles.loadingText}>Enter a JSONPath query and JSON to see results</span>
-      )}
-      {status === 'error' && (
+      </div>
+    )
+  }
+
+  if (status === 'error') {
+    return (
+      <div className={styles.resultArea}>
         <span className={styles.errorText}>{message}</span>
-      )}
-      {status === 'success' && data}
-    </div>
+      </div>
+    )
+  }
+
+  return (
+    <Editor
+      language="json"
+      theme="light"
+      value={data}
+      options={{
+        readOnly: true,
+        minimap: { enabled: false },
+        fontSize: 14,
+        fontFamily: "'Fira Code', 'Consolas', 'Monaco', monospace",
+        lineNumbers: 'on',
+        scrollBeyondLastLine: false,
+        automaticLayout: true,
+        tabSize: 2,
+      }}
+    />
   )
 }
