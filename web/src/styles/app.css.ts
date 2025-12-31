@@ -73,7 +73,8 @@ export const paneHeader = style({
 export const paneContent = style({
   flex: 1,
   minHeight: 0,
-  overflow: 'hidden',
+  display: 'flex',
+  flexDirection: 'column',
 })
 
 export const queryInput = style({
