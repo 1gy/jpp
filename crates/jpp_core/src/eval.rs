@@ -270,8 +270,15 @@ fn evaluate_expr<'a>(expr: &Expr, current: &'a Value, root: &'a Value) -> ExprRe
             _ => ExprResult::OwnedValue(cached.cached_value.clone()),
         },
         Expr::Comparison { left, op, right } => {
-            let left_result = evaluate_expr(left, current, root);
-            let right_result = evaluate_expr(right, current, root);
+            // Optimize: directly reference cached_value for literals to avoid cloning
+            let left_result = match left.as_ref() {
+                Expr::Literal(cached) => ExprResult::Value(&cached.cached_value),
+                _ => evaluate_expr(left, current, root),
+            };
+            let right_result = match right.as_ref() {
+                Expr::Literal(cached) => ExprResult::Value(&cached.cached_value),
+                _ => evaluate_expr(right, current, root),
+            };
             let result = compare_values(&left_result, *op, &right_result);
             if result {
                 ExprResult::Value(&*TRUE_VAL)
