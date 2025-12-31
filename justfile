@@ -34,7 +34,7 @@ wasm-build:
     target/wasm32-unknown-unknown/release/jpp_wasm.wasm
 
 web-dev: wasm-build
-  cd web && bun install && bunx --bun vite
+  cd web && bun install && bunx --bun vite --host
 
 web-build: wasm-build
   cd web && bun install && bunx --bun vite build
