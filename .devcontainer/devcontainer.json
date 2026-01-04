@@ -4,6 +4,7 @@
 	"image": "mcr.microsoft.com/devcontainers/base:trixie",
 	"features": {
 		"ghcr.io/devcontainers/features/rust:1": {},
+		"ghcr.io/devcontainers/features/github-cli:1": {},
 		"./claude-code": {},
 		"./just": {},
 		"./bun": {}
