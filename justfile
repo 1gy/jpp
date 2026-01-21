@@ -5,7 +5,7 @@ run:
   cargo run
 
 build:
-  cargo build --all
+  cargo build --workspace
 
 lint:
   cargo clippy --all-targets --all-features -- -D warnings
@@ -14,7 +14,7 @@ format:
   cargo fmt --all
 
 test:
-  cargo test --all
+  cargo test --workspace
 
 coverage:
   cargo llvm-cov
