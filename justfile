@@ -29,9 +29,7 @@ setup:
   cargo install cargo-llvm-cov --locked
 
 wasm-build:
-  cargo build -p jpp_wasm --target wasm32-unknown-unknown --release
-  wasm-bindgen --target web --out-dir web/wasm \
-    target/wasm32-unknown-unknown/release/jpp_wasm.wasm
+  wasm-pack build crates/jpp_wasm --target web --out-dir ../../web/wasm --release
 
 web-dev: wasm-build
   cd web && bun install && bunx --bun vite --host

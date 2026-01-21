@@ -28,17 +28,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Add WASM target
-        run: rustup target add wasm32-unknown-unknown
-
-      - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli
+      - name: Install wasm-pack
+        run: cargo install wasm-pack
 
       - name: Build WASM
-        run: |
-          cargo build -p jpp_wasm --target wasm32-unknown-unknown --release
-          wasm-bindgen --target web --out-dir web/wasm \
-            target/wasm32-unknown-unknown/release/jpp_wasm.wasm
+        run: wasm-pack build crates/jpp_wasm --target web --out-dir ../../web/wasm --release
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
